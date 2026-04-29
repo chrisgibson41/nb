@@ -1,0 +1,117 @@
+/* ── Container ──────────────────────────────────────────────────────────── */
+.cm-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Headings ────────────────────────────────────────────────────────────── */
+/* Decoration.line() adds the class directly to the .cm-line element */
+.cm-line.cm-md-h1 {
+  font-size: 2em;
+  font-weight: 700;
+  color: #e8e8e8;
+  line-height: 1.3;
+  padding-top: 0.25em;
+  padding-bottom: 0.1em;
+}
+.cm-line.cm-md-h2 {
+  font-size: 1.55em;
+  font-weight: 700;
+  color: #e2e2e2;
+  line-height: 1.35;
+}
+.cm-line.cm-md-h3 {
+  font-size: 1.25em;
+  font-weight: 700;
+  color: #dcdcdc;
+}
+.cm-line.cm-md-h4 {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #d0d0d0;
+}
+.cm-line.cm-md-h5 {
+  font-size: 1em;
+  font-weight: 600;
+  color: #c0c0c0;
+}
+.cm-line.cm-md-h6 {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: #999;
+}
+
+/* ── Inline styles ───────────────────────────────────────────────────────── */
+.cm-md-bold   { font-weight: 700; color: #e8e8e8; }
+.cm-md-italic { font-style: italic; }
+.cm-md-strike { text-decoration: line-through; opacity: 0.55; }
+
+.cm-md-code-span {
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.875em;
+  background: #2b2b2b;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #ce9178;
+}
+
+.cm-md-link {
+  color: #4fc1ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Blockquote ──────────────────────────────────────────────────────────── */
+.cm-line.cm-md-blockquote {
+  border-left: 3px solid #4a4a4a;
+  margin-left: -16px;
+  padding-left: 13px;
+  color: #909090;
+  font-style: italic;
+}
+
+/* ── Code fence ──────────────────────────────────────────────────────────── */
+.cm-line.cm-md-fence-marker {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8em;
+  color: #555;
+  background: #1a1a1a;
+}
+
+.cm-line.cm-md-fence-body {
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.875em;
+  color: #abb2bf;
+  background: #1a1a1a;
+  padding-left: 16px;
+}
+
+/* ── HR widget ───────────────────────────────────────────────────────────── */
+.cm-md-hr {
+  border: none;
+  border-top: 1px solid #3a3a3a;
+  margin: 8px 0;
+  width: 100%;
+  display: block;
+}
+
+/* ── Checkbox ────────────────────────────────────────────────────────────── */
+.cm-md-checkbox {
+  margin-right: 6px;
+  cursor: default;
+  accent-color: #007acc;
+  transform: scale(1.1);
+  vertical-align: middle;
+}
+
+/* ── Bullet ──────────────────────────────────────────────────────────────── */
+.cm-md-bullet {
+  font-size: 1.1em;
+  margin-right: 5px;
+  color: #888;
+  font-family: sans-serif;
+}

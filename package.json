@@ -1,0 +1,21 @@
+{
+  "name": "obsidian-notes",
+  "version": "0.1.0",
+  "description": "Local markdown note-taking app",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"cd client && npm run dev\"",
+    "install:all": "npm install && cd client && npm install",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "gray-matter": "^4.0.3",
+    "marked": "^12.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
