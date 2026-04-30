@@ -8,40 +8,46 @@
 }
 
 /* ── Headings ────────────────────────────────────────────────────────────── */
-/* Decoration.line() adds the class directly to the .cm-line element */
-.cm-line.cm-md-h1 {
+/* Target both the line and any syntax-highlight spans inside (oneDark overrides) */
+.cm-line.cm-md-h1,
+.cm-line.cm-md-h1 span {
   font-size: 2em;
   font-weight: 700;
-  color: #e8e8e8;
+  color: #e6edf3 !important;
   line-height: 1.3;
   padding-top: 0.25em;
   padding-bottom: 0.1em;
 }
-.cm-line.cm-md-h2 {
+.cm-line.cm-md-h2,
+.cm-line.cm-md-h2 span {
   font-size: 1.55em;
   font-weight: 700;
-  color: #e2e2e2;
+  color: #c9d1d9 !important;
   line-height: 1.35;
 }
-.cm-line.cm-md-h3 {
+.cm-line.cm-md-h3,
+.cm-line.cm-md-h3 span {
   font-size: 1.25em;
   font-weight: 700;
-  color: #dcdcdc;
+  color: #b1bac4 !important;
 }
-.cm-line.cm-md-h4 {
+.cm-line.cm-md-h4,
+.cm-line.cm-md-h4 span {
   font-size: 1.1em;
   font-weight: 600;
-  color: #d0d0d0;
+  color: #9ba5af !important;
 }
-.cm-line.cm-md-h5 {
+.cm-line.cm-md-h5,
+.cm-line.cm-md-h5 span {
   font-size: 1em;
   font-weight: 600;
-  color: #c0c0c0;
+  color: #8b949e !important;
 }
-.cm-line.cm-md-h6 {
+.cm-line.cm-md-h6,
+.cm-line.cm-md-h6 span {
   font-size: 0.9em;
   font-weight: 600;
-  color: #999;
+  color: #6e7681 !important;
 }
 
 /* ── Inline styles ───────────────────────────────────────────────────────── */
@@ -114,4 +120,36 @@
   margin-right: 5px;
   color: #888;
   font-family: sans-serif;
+}
+
+/* ── Mermaid diagram widget ──────────────────────────────────────────────── */
+.cm-md-mermaid {
+  display: block;
+  margin: 8px 0;
+  padding: 16px;
+  background: #1a1a1a;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  overflow-x: auto;
+  cursor: text;
+  min-height: 48px;
+}
+
+.cm-md-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.cm-md-mermaid-error {
+  border-color: rgba(244, 71, 71, 0.35);
+  background: rgba(244, 71, 71, 0.07);
+}
+
+.cm-md-mermaid-error-msg {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: #f44747;
+  white-space: pre-wrap;
 }

@@ -64,6 +64,7 @@ const styles = {
     flex: 1,
     overflowY: 'auto',
     padding: '4px 0',
+    minHeight: 0,
   },
   item: (depth, active, isHovered) => ({
     display: 'flex',
@@ -175,6 +176,17 @@ function FileIcon() {
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#89d4f5" strokeWidth="1.5" style={{ flexShrink: 0, marginRight: '5px' }}>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+
+function TemplateFileIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c5a3ff" strokeWidth="1.5" style={{ flexShrink: 0, marginRight: '5px' }}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="8" y1="8" x2="16" y2="8" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="8" y1="16" x2="12" y2="16" />
     </svg>
   );
 }
@@ -448,6 +460,111 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
   );
 }
 
+function TemplatesSection({ onFileSelect }) {
+  const [templates, setTemplates] = useState([]);
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API}/api/templates`)
+      .then((r) => r.json())
+      .then((data) => setTemplates(data))
+      .catch(() => setTemplates([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div style={{ flexShrink: 0 }}>
+      {/* Divider */}
+      <div style={{ height: '1px', background: '#3c3c3c', margin: '4px 0' }} />
+
+      {/* Header row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 10px 4px',
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <span style={styles.sectionTitle}>Templates</span>
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            color: '#888',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.15s',
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </span>
+      </div>
+
+      {/* Template list */}
+      {expanded && (
+        <div style={{ maxHeight: '160px', overflowY: 'auto', paddingBottom: '4px' }}>
+          {loading ? (
+            <div style={styles.emptyMsg}>Loading...</div>
+          ) : templates.length === 0 ? (
+            <div style={styles.emptyMsg}>No templates</div>
+          ) : (
+            templates.map((t) => (
+              <TemplateRow key={t.name} template={t} onFileSelect={onFileSelect} />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplateRow({ template, onFileSelect }) {
+  const [hovered, setHovered] = useState(false);
+  const displayName = template.name.replace(/-/g, ' ');
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '3px 8px 3px 12px',
+        cursor: 'pointer',
+        color: '#cccccc',
+        background: hovered ? '#2a2d2e' : 'transparent',
+        userSelect: 'none',
+        minHeight: '24px',
+        borderRadius: '3px',
+        margin: '0 4px',
+        transition: 'background 0.1s',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => onFileSelect(template.path)}
+    >
+      <TemplateFileIcon />
+      <span
+        style={{
+          flex: 1,
+          fontSize: '13px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          textTransform: 'capitalize',
+        }}
+      >
+        {displayName}
+      </span>
+    </div>
+  );
+}
+
 export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefresh, onNewTemplate, searchQuery }) {
   const [tree, setTree] = useState(null);
   const [localFilter, setLocalFilter] = useState('');
@@ -471,23 +588,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
 
   const effectiveFilter = searchQuery || localFilter;
 
-  const handleNewFile = async () => {
-    const name = prompt('New file name:', 'untitled.md');
-    if (!name) return;
-    const filePath = `notes/${name.endsWith('.md') ? name : name + '.md'}`;
-    try {
-      await fetch(`${API}/api/file`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, content: `# ${name.replace(/\.md$/, '')}\n\n` }),
-      });
-      onRefresh();
-      onFileSelect(filePath);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -496,8 +596,8 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
           <div style={{ display: 'flex', gap: '4px' }}>
             <button
               style={styles.iconBtn}
-              title="New file"
-              onClick={handleNewFile}
+              title="New note (Ctrl+T)"
+              onClick={onNewTemplate}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
             >
@@ -506,19 +606,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
                 <polyline points="14 2 14 8 20 8"/>
                 <line x1="12" y1="13" x2="12" y2="19"/>
                 <line x1="9" y1="16" x2="15" y2="16"/>
-              </svg>
-            </button>
-            <button
-              style={styles.iconBtn}
-              title="New from template (Ctrl+T)"
-              onClick={onNewTemplate}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <line x1="12" y1="8" x2="12" y2="16"/>
-                <line x1="8" y1="12" x2="16" y2="12"/>
               </svg>
             </button>
             <button
@@ -577,6 +664,8 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
           <div style={styles.emptyMsg}>Failed to load files</div>
         )}
       </div>
+
+      <TemplatesSection onFileSelect={onFileSelect} />
     </div>
   );
 }

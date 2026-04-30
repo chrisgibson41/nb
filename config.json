@@ -1,0 +1,9 @@
+{
+  "notesDir": "./notes",
+  "templatesDir": "./templates",
+  "templatePaths": {
+    "daily-note": "Daily/{{date}}.md",
+    "meeting-note": "Meetings/{{date}}-{{slug}}.md",
+    "blank": "{{title}}.md"
+  }
+}

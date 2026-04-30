@@ -152,20 +152,28 @@ const TEMPLATE_DESCRIPTIONS = {
   'blank': 'Empty note with frontmatter',
 };
 
-function getDefaultPath(template, title) {
+function getDefaultPath(templateName, title, config) {
   const today = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  const date = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const year = String(today.getFullYear());
+  const month = pad(today.getMonth() + 1);
+  const day = pad(today.getDate());
+  const date = `${year}-${month}-${day}`;
 
-  if (template === 'daily-note') {
-    return `notes/Daily/${date}.md`;
-  }
-  if (template === 'meeting-note') {
-    const slug = (title || 'meeting').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    return `notes/Meetings/${date}-${slug}.md`;
-  }
-  const slug = (title || 'untitled').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-  return `notes/${slug}.md`;
+  const slug = (title || 'untitled').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'untitled';
+
+  const templatePaths = config?.templatePaths || {};
+  const pattern = templatePaths[templateName] || '{{title}}.md';
+
+  let result = pattern;
+  result = result.split('{{date}}').join(date);
+  result = result.split('{{year}}').join(year);
+  result = result.split('{{month}}').join(month);
+  result = result.split('{{day}}').join(day);
+  result = result.split('{{title}}').join(slug);
+  result = result.split('{{slug}}').join(slug);
+
+  return `notes/${result}`;
 }
 
 export default function TemplateModal({ onClose, onCreated, api }) {
@@ -175,6 +183,15 @@ export default function TemplateModal({ onClose, onCreated, api }) {
   const [outputPath, setOutputPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [config, setConfig] = useState(null);
+
+  // Fetch config on mount
+  useEffect(() => {
+    fetch(`${api}/api/config`)
+      .then((r) => r.json())
+      .then((data) => setConfig(data))
+      .catch(() => setConfig({}));
+  }, [api]);
 
   useEffect(() => {
     fetch(`${api}/api/templates`)
@@ -183,7 +200,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
         setTemplates(data);
         if (data.length > 0) {
           setSelectedTemplate(data[0].name);
-          setOutputPath(getDefaultPath(data[0].name, ''));
+          setOutputPath(getDefaultPath(data[0].name, '', config));
         }
       })
       .catch(() => setError('Failed to load templates'));
@@ -191,9 +208,9 @@ export default function TemplateModal({ onClose, onCreated, api }) {
 
   useEffect(() => {
     if (selectedTemplate) {
-      setOutputPath(getDefaultPath(selectedTemplate, title));
+      setOutputPath(getDefaultPath(selectedTemplate, title, config));
     }
-  }, [selectedTemplate, title]);
+  }, [selectedTemplate, title, config]);
 
   const handleKeyDown = useCallback(
     (e) => {
@@ -249,7 +266,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
-          <span style={styles.title}>New note from template</span>
+          <span style={styles.title}>New Note</span>
           <button
             style={styles.closeBtn}
             onClick={onClose}
@@ -323,6 +340,9 @@ export default function TemplateModal({ onClose, onCreated, api }) {
               onFocus={(e) => { e.currentTarget.style.borderColor = '#007acc'; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = '#3c3c3c'; }}
             />
+            <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
+              Path is relative to project root. Change template paths in config.json.
+            </div>
           </div>
 
           {error && <div style={styles.error}>{error}</div>}

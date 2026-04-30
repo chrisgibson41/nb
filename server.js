@@ -11,9 +11,19 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const PORT = 3001;
-const NOTES_DIR = path.resolve('./notes');
-const TEMPLATES_DIR = path.resolve('./templates');
+const PORT = 3003;
+
+// --- Config ---
+const CONFIG_FILE = path.resolve('./config.json');
+function loadConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
+  catch { return { notesDir: './notes', templatesDir: './templates', templatePaths: { 'daily-note': 'Daily/{{date}}.md', 'meeting-note': 'Meetings/{{date}}-{{slug}}.md', 'blank': '{{title}}.md' } }; }
+}
+function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
+
+const cfg = loadConfig();
+const NOTES_DIR = path.resolve(cfg.notesDir);
+const TEMPLATES_DIR = path.resolve(cfg.templatesDir);
 
 // Ensure notes and templates directories exist
 if (!fs.existsSync(NOTES_DIR)) {
@@ -103,6 +113,25 @@ function buildTree(dirPath) {
 }
 
 // --- API Routes ---
+
+// GET /api/config
+app.get('/api/config', (req, res) => {
+  try {
+    res.json(loadConfig());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/config
+app.put('/api/config', (req, res) => {
+  try {
+    saveConfig(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/tree
 app.get('/api/tree', (req, res) => {
@@ -267,11 +296,17 @@ app.get('/api/templates', (req, res) => {
       return res.json([]);
     }
     const files = fs.readdirSync(TEMPLATES_DIR).filter((f) => f.endsWith('.md'));
-    const templates = files.map((f) => ({
-      name: f.replace(/\.md$/, ''),
-      filename: f,
-      path: path.join(TEMPLATES_DIR, f),
-    }));
+    const templates = files.map((f) => {
+      const raw = fs.readFileSync(path.join(TEMPLATES_DIR, f), 'utf-8');
+      const parsed = matter(raw);
+      return {
+        name: f.replace(/\.md$/, ''),
+        filename: f,
+        path: path.join(TEMPLATES_DIR, f),
+        shortcuts: parsed.data._shortcuts || [],
+        tags: parsed.data.tags || [],
+      };
+    });
     res.json(templates);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -290,7 +325,19 @@ app.post('/api/template', (req, res) => {
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    let content = fs.readFileSync(templateFile, 'utf-8');
+    const rawTemplate = fs.readFileSync(templateFile, 'utf-8');
+    // Strip _shortcuts (template-only metadata) from the generated note's frontmatter
+    const parsedTemplate = matter(rawTemplate);
+    delete parsedTemplate.data._shortcuts;
+    // Rebuild: if there's remaining frontmatter data, keep it; otherwise use raw content
+    let content;
+    const remainingKeys = Object.keys(parsedTemplate.data);
+    if (remainingKeys.length > 0) {
+      content = matter.stringify(parsedTemplate.content, parsedTemplate.data);
+    } else {
+      // No frontmatter keys left — just use the body
+      content = parsedTemplate.content.replace(/^\n/, '');
+    }
 
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');

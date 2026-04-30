@@ -5,7 +5,9 @@ import EditorPane from './components/EditorPane.jsx';
 import TagBar from './components/TagBar.jsx';
 import Toolbar from './components/Toolbar.jsx';
 import TemplateModal from './components/TemplateModal.jsx';
-import MeetingsPanel from './components/MeetingsPanel.jsx';
+import ShortcutsPanel from './components/ShortcutsPanel.jsx';
+import OutlinePanel from './components/OutlinePanel.jsx';
+import TabBar from './components/TabBar.jsx';
 
 const API = 'http://localhost:3001';
 
@@ -16,6 +18,9 @@ export default function App() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  // Tabs — [{ path, pinned }]; unsaved tracked by comparing content vs savedContent per path
+  const [tabs, setTabs] = useState([]);
+  const [unsavedPaths, setUnsavedPaths] = useState(new Set());
   const wsRef = useRef(null);
   const saveTimerRef = useRef(null);
   const editorRef = useRef(null);
@@ -38,7 +43,7 @@ export default function App() {
     return () => { if (wsRef.current) wsRef.current.close(); };
   }, []);
 
-  // Load file from server
+  // Load file from server and open/switch to its tab
   const openFile = useCallback(async (filePath) => {
     try {
       const res = await fetch(`${API}/api/file?path=${encodeURIComponent(filePath)}`);
@@ -47,10 +52,65 @@ export default function App() {
       setCurrentFile(filePath);
       setContent(text);
       setSavedContent(text);
+      setUnsavedPaths(prev => { const n = new Set(prev); n.delete(filePath); return n; });
+      setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, { path: filePath, pinned: false }]);
     } catch (err) {
       console.error('Error opening file:', err);
     }
   }, []);
+
+  // Switch to an already-open tab (no fetch if it's the same file)
+  const switchTab = useCallback((filePath) => {
+    if (filePath === currentFile) return;
+    openFile(filePath);
+  }, [currentFile, openFile]);
+
+  // Close a tab
+  const closeTab = useCallback((filePath) => {
+    setTabs(prev => {
+      const idx = prev.findIndex(t => t.path === filePath);
+      if (idx === -1) return prev;
+      const next = prev.filter(t => t.path !== filePath);
+      // If closing the active tab, switch to an adjacent one
+      if (filePath === currentFile) {
+        const newActive = next[Math.min(idx, next.length - 1)];
+        if (newActive) openFile(newActive.path);
+        else { setCurrentFile(null); setContent(''); setSavedContent(''); }
+      }
+      return next;
+    });
+    setUnsavedPaths(prev => { const n = new Set(prev); n.delete(filePath); return n; });
+  }, [currentFile, openFile]);
+
+  // Pin / unpin a tab
+  const togglePin = useCallback((filePath) => {
+    setTabs(prev => prev.map(t => t.path === filePath ? { ...t, pinned: !t.pinned } : t));
+  }, []);
+
+  // Close all tabs except the given one
+  const closeOtherTabs = useCallback((keepPath) => {
+    setTabs(prev => {
+      const next = prev.filter(t => t.path === keepPath || t.pinned);
+      if (!next.some(t => t.path === currentFile)) {
+        const newActive = next.find(t => t.path === keepPath) || next[0];
+        if (newActive) openFile(newActive.path);
+        else { setCurrentFile(null); setContent(''); setSavedContent(''); }
+      }
+      return next;
+    });
+  }, [currentFile, openFile]);
+
+  // Close all non-pinned tabs
+  const closeAllTabs = useCallback(() => {
+    setTabs(prev => {
+      const next = prev.filter(t => t.pinned);
+      if (!next.some(t => t.path === currentFile)) {
+        if (next.length) openFile(next[0].path);
+        else { setCurrentFile(null); setContent(''); setSavedContent(''); }
+      }
+      return next;
+    });
+  }, [currentFile, openFile]);
 
   // Save file to server
   const saveFile = useCallback(async (filePath, fileContent) => {
@@ -70,8 +130,12 @@ export default function App() {
   // Debounced auto-save on every edit
   const handleContentChange = useCallback((newContent) => {
     setContent(newContent);
+    setUnsavedPaths(prev => { const n = new Set(prev); n.add(currentFile); return n; });
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => saveFile(currentFile, newContent), 800);
+    saveTimerRef.current = setTimeout(() => {
+      saveFile(currentFile, newContent);
+      setUnsavedPaths(prev => { const n = new Set(prev); n.delete(currentFile); return n; });
+    }, 800);
   }, [currentFile, saveFile]);
 
   // Ctrl/Cmd+S — immediate save
@@ -86,12 +150,16 @@ export default function App() {
         e.preventDefault();
         setShowTemplateModal(true);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+        e.preventDefault();
+        if (currentFile) closeTab(currentFile);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentFile, content, saveFile]);
+  }, [currentFile, content, saveFile, closeTab]);
 
-  const isUnsaved = content !== savedContent;
+  const isUnsaved = currentFile ? unsavedPaths.has(currentFile) : false;
 
   const handleTemplateCreated = useCallback((filePath, fileContent) => {
     setCurrentFile(filePath);
@@ -99,6 +167,7 @@ export default function App() {
     setSavedContent(fileContent);
     setShowTemplateModal(false);
     setTreeRefreshKey((k) => k + 1);
+    setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, { path: filePath, pinned: false }]);
   }, []);
 
   return (
@@ -110,6 +179,17 @@ export default function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentFile={currentFile}
+      />
+
+      <TabBar
+        tabs={tabs}
+        activeTab={currentFile}
+        unsavedPaths={unsavedPaths}
+        onSwitch={switchTab}
+        onClose={closeTab}
+        onPin={togglePin}
+        onCloseOthers={closeOtherTabs}
+        onCloseAll={closeAllTabs}
       />
 
       <div className="app-body">
@@ -127,18 +207,24 @@ export default function App() {
         <div className="main-area">
           {currentFile ? (
             <div className="editor-area">
-              <MeetingsPanel
+              <ShortcutsPanel
                 content={content}
                 setContent={handleContentChange}
                 filePath={currentFile}
                 onScrollTo={text => editorRef.current?.scrollToText(text)}
               />
-              <EditorPane
-                ref={editorRef}
-                content={content}
-                onChange={handleContentChange}
-                filePath={currentFile}
-              />
+              <div className="editor-with-outline">
+                <EditorPane
+                  ref={editorRef}
+                  content={content}
+                  onChange={handleContentChange}
+                  filePath={currentFile}
+                />
+                <OutlinePanel
+                  content={content}
+                  onScrollTo={text => editorRef.current?.scrollToText(text)}
+                />
+              </div>
               <TagBar content={content} setContent={handleContentChange} />
             </div>
           ) : (

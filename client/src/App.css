@@ -43,6 +43,14 @@
   overflow: hidden;
 }
 
+/* Editor pane + outline panel side by side */
+.editor-with-outline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 /* No file open */
 .no-file-open {
   flex: 1;
