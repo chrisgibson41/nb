@@ -96,7 +96,7 @@ const styles = {
   },
 };
 
-export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, searchQuery, setSearchQuery, currentFile }) {
+export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, onHistory, searchQuery, setSearchQuery, currentFile }) {
   const fileName = currentFile ? currentFile.split('/').pop() : null;
 
   return (
@@ -138,6 +138,21 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
           >×</button>
         )}
       </div>
+
+      {currentFile && (
+        <button
+          style={styles.btn}
+          onClick={onHistory}
+          title="File history"
+          onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; e.currentTarget.style.borderColor = '#555'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#3c3c3c'; }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          History
+        </button>
+      )}
 
       <button
         style={styles.btn}

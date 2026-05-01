@@ -8,6 +8,7 @@ import Toolbar from './components/Toolbar.jsx';
 import TemplateModal from './components/TemplateModal.jsx';
 import ShortcutsPanel from './components/ShortcutsPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
+import HistoryModal from './components/HistoryModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
 import TabBar from './components/TabBar.jsx';
 
@@ -19,6 +20,7 @@ export default function App() {
   const [savedContent, setSavedContent] = useState('');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   // Tabs — [{ path, pinned }]; unsaved tracked by comparing content vs savedContent per path
@@ -212,6 +214,7 @@ export default function App() {
         onSave={() => saveFile(currentFile, content)}
         onNewTemplate={() => setShowTemplateModal(true)}
         onSettings={() => setShowSettings(true)}
+        onHistory={() => setShowHistory(true)}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentFile={currentFile}
@@ -291,6 +294,14 @@ export default function App() {
 
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {showHistory && currentFile && (
+        <HistoryModal
+          filePath={currentFile}
+          onClose={() => setShowHistory(false)}
+          onRestore={(restoredContent) => handleContentChange(restoredContent)}
+        />
       )}
     </div>
   );

@@ -460,6 +460,53 @@ app.post('/api/template', (req, res) => {
   }
 });
 
+app.get('/api/git/log', (req, res) => {
+  try {
+    const filePath = safePath(req.query.path, NOTES_DIR);
+    const repoDir = NOTES_DIR;
+    exec(`git -C ${JSON.stringify(repoDir)} rev-parse --show-toplevel`, (err, topLevel) => {
+      if (err) return res.status(500).json({ error: 'Not a git repository' });
+      const repoRoot = topLevel.trim();
+      const relToRoot = path.relative(repoRoot, filePath);
+      exec(`git -C ${JSON.stringify(repoRoot)} log --pretty=format:"%H|%ai|%s" -- ${JSON.stringify(relToRoot)}`, (err2, stdout, stderr2) => {
+        if (err2) return res.status(500).json({ error: (stderr2 || err2.message).trim() });
+        const commits = stdout.trim().split('\n').filter(Boolean).map(line => {
+          const idx1 = line.indexOf('|');
+          const idx2 = line.indexOf('|', idx1 + 1);
+          return {
+            hash: line.slice(0, idx1),
+            date: line.slice(idx1 + 1, idx2).trim(),
+            message: line.slice(idx2 + 1).trim(),
+          };
+        });
+        res.json(commits);
+      });
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/git/show', (req, res) => {
+  try {
+    const filePath = safePath(req.query.path, NOTES_DIR);
+    const hash = req.query.hash;
+    if (!hash || !/^[0-9a-f]{7,40}$/i.test(hash)) return res.status(400).json({ error: 'Invalid hash' });
+    const repoDir = NOTES_DIR;
+    exec(`git -C ${JSON.stringify(repoDir)} rev-parse --show-toplevel`, (err, topLevel) => {
+      if (err) return res.status(500).json({ error: 'Not a git repository' });
+      const repoRoot = topLevel.trim();
+      const relToRoot = path.relative(repoRoot, filePath);
+      exec(`git -C ${JSON.stringify(repoRoot)} show ${JSON.stringify(hash + ':' + relToRoot)}`, (err2, stdout, stderr2) => {
+        if (err2) return res.status(500).json({ error: (stderr2 || err2.message).trim() });
+        res.type('text/plain').send(stdout);
+      });
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`  Notes:     ${NOTES_DIR}`);
