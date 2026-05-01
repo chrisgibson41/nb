@@ -1,4 +1,4 @@
 /node_modules
 .DS_Store
-# .claude
+.claude
 /client/node_modules

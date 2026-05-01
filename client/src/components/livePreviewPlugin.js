@@ -236,6 +236,176 @@ class BulletWidget extends WidgetType {
   ignoreEvent() { return false }
 }
 
+// ─── YAML frontmatter ────────────────────────────────────────────────────────
+
+// Detect frontmatter block (must start at line 1 with '---')
+function parseFrontmatter(state) {
+  if (state.doc.lines < 2) return null
+  if (state.doc.line(1).text.trim() !== '---') return null
+  for (let n = 2; n <= Math.min(state.doc.lines, 60); n++) {
+    if (state.doc.line(n).text.trim() === '---') return { start: 1, end: n }
+  }
+  return null
+}
+
+// Minimal YAML parser — handles the subset used in note frontmatter
+function parseSimpleYaml(text) {
+  const result = {}
+  const lines = text.split('\n')
+  let currentKey = null
+
+  for (const line of lines) {
+    if (!line.trim()) continue
+    // List item under the current key
+    if (/^[ \t]+-/.test(line) && currentKey) {
+      const val = line.replace(/^[ \t]+-\s*/, '').trim().replace(/^['"]|['"]$/g, '')
+      if (!Array.isArray(result[currentKey])) result[currentKey] = []
+      result[currentKey].push(val)
+      continue
+    }
+    // key: value  |  key: [a, b]  |  key:
+    const m = line.match(/^([\w-]+)\s*:\s*(.*)$/)
+    if (!m) continue
+    currentKey = m[1]
+    const raw = m[2].trim()
+    if (!raw) {
+      result[currentKey] = []
+    } else if (raw.startsWith('[') && raw.endsWith(']')) {
+      result[currentKey] = raw.slice(1, -1)
+        .split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean)
+    } else {
+      result[currentKey] = raw.replace(/^['"]|['"]$/g, '')
+    }
+  }
+  return result
+}
+
+function formatDate(str) {
+  try {
+    const d = new Date(str + 'T00:00:00')
+    if (isNaN(d)) return str
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  } catch { return str }
+}
+
+class FrontmatterWidget extends WidgetType {
+  constructor(yamlText, blockFrom) {
+    super()
+    this.yamlText = yamlText
+    this.blockFrom = blockFrom
+  }
+  eq(other) { return other.yamlText === this.yamlText }
+
+  toDOM(view) {
+    const fields = parseSimpleYaml(this.yamlText)
+
+    const bar = document.createElement('div')
+    bar.className = 'cm-md-fm-bar'
+    bar.title = 'Click to edit'
+
+    // Click anywhere on the bar → move cursor into frontmatter for editing
+    bar.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      view.dispatch({ selection: { anchor: this.blockFrom + 4 }, userEvent: 'select' })
+      view.focus()
+    })
+
+    // Date
+    if (fields.date) {
+      const el = document.createElement('span')
+      el.className = 'cm-fm-date'
+      el.textContent = formatDate(fields.date)
+      bar.appendChild(el)
+    }
+
+    // Tags as pills
+    const tags = fields.tags
+    if (tags && (Array.isArray(tags) ? tags.length : true)) {
+      const list = Array.isArray(tags) ? tags : [tags]
+      const wrap = document.createElement('span')
+      wrap.className = 'cm-fm-tags'
+      list.forEach(tag => {
+        const pill = document.createElement('span')
+        pill.className = 'cm-fm-tag'
+        pill.textContent = '#' + tag
+        wrap.appendChild(pill)
+      })
+      bar.appendChild(wrap)
+    }
+
+    // All other fields (skip private _keys, date, tags already rendered)
+    for (const [k, v] of Object.entries(fields)) {
+      if (k === 'date' || k === 'tags' || k.startsWith('_')) continue
+      const el = document.createElement('span')
+      el.className = 'cm-fm-field'
+      const kEl = document.createElement('span')
+      kEl.className = 'cm-fm-key'
+      kEl.textContent = k
+      const vEl = document.createElement('span')
+      vEl.className = 'cm-fm-val'
+      vEl.textContent = Array.isArray(v) ? v.join(', ') : String(v)
+      el.appendChild(kEl)
+      el.appendChild(vEl)
+      bar.appendChild(el)
+    }
+
+    // If frontmatter has no displayable fields at all, show a placeholder
+    if (!bar.children.length) {
+      const ph = document.createElement('span')
+      ph.className = 'cm-fm-empty'
+      ph.textContent = 'Properties'
+      bar.appendChild(ph)
+    }
+
+    return bar
+  }
+
+  ignoreEvent() { return true }
+}
+
+function buildFrontmatterDecoration(state) {
+  try {
+    const fm = parseFrontmatter(state)
+    if (!fm) return new RangeSetBuilder().finish()
+
+    // Show raw YAML only when cursor is between the two --- delimiters.
+    // Cursor on the opening --- line (line 1 / fm.start) does NOT count —
+    // that's where it lands on file-open, and we still want to show the widget.
+    for (const range of state.selection.ranges) {
+      const a = state.doc.lineAt(range.from).number
+      const b = state.doc.lineAt(range.to).number
+      if (a <= fm.end && b > fm.start) return new RangeSetBuilder().finish()
+    }
+
+    let yamlText = ''
+    for (let n = fm.start + 1; n < fm.end; n++) {
+      yamlText += state.doc.line(n).text + '\n'
+    }
+
+    const blockFrom = state.doc.line(fm.start).from
+    const lastLine  = state.doc.line(fm.end)
+    const blockTo   = fm.end < state.doc.lines ? lastLine.to + 1 : lastLine.to
+
+    const builder = new RangeSetBuilder()
+    builder.add(blockFrom, blockTo, Decoration.replace({
+      widget: new FrontmatterWidget(yamlText.trim(), blockFrom),
+      block: true,
+    }))
+    return builder.finish()
+  } catch {
+    return new RangeSetBuilder().finish()
+  }
+}
+
+const frontmatterBlockField = StateField.define({
+  create(state) { return buildFrontmatterDecoration(state) },
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildFrontmatterDecoration(tr.state)
+    return deco
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+
 // ─── Shared fence block parser ────────────────────────────────────────────────
 
 function parseFenceBlocks(state) {
@@ -463,6 +633,16 @@ function buildDecorations(view) {
     const fenceBlocks = parseFenceBlocks(state)
     const cursorLines = getCursorLines(state, fenceBlocks)
 
+    // ── Frontmatter ranges
+    const fm = parseFrontmatter(state)
+    const inFrontmatter   = new Set()
+    const isFrontmatterDelim = new Set()
+    if (fm) {
+      isFrontmatterDelim.add(fm.start)
+      isFrontmatterDelim.add(fm.end)
+      for (let n = fm.start + 1; n < fm.end; n++) inFrontmatter.add(n)
+    }
+
     // Build a quick lookup for fence membership
     const inFenceContent = new Set()   // body lines (not the ``` markers)
     const isFenceMarker  = new Set()   // the ``` lines themselves
@@ -479,6 +659,9 @@ function buildDecorations(view) {
       const line   = state.doc.line(n)
       const { text, from, to } = line
       const active = cursorLines.has(n)
+
+        // ── YAML frontmatter — handled entirely by frontmatterBlockField; skip here
+      if (isFrontmatterDelim.has(n) || inFrontmatter.has(n)) continue
 
       // ── Code fence markers (``` lang / ```)
       if (isFenceMarker.has(n)) {
@@ -599,6 +782,7 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
 })
 
 export const livePreviewPlugin = [
+  frontmatterBlockField,
   mermaidBlockField,
   mermaidScrollListener,
   ViewPlugin.fromClass(

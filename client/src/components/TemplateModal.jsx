@@ -152,28 +152,20 @@ const TEMPLATE_DESCRIPTIONS = {
   'blank': 'Empty note with frontmatter',
 };
 
-function getDefaultPath(templateName, title, config) {
+function getDefaultPath(template, title) {
   const today = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  const year = String(today.getFullYear());
-  const month = pad(today.getMonth() + 1);
-  const day = pad(today.getDate());
-  const date = `${year}-${month}-${day}`;
+  const date = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
 
-  const slug = (title || 'untitled').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') || 'untitled';
-
-  const templatePaths = config?.templatePaths || {};
-  const pattern = templatePaths[templateName] || '{{title}}.md';
-
-  let result = pattern;
-  result = result.split('{{date}}').join(date);
-  result = result.split('{{year}}').join(year);
-  result = result.split('{{month}}').join(month);
-  result = result.split('{{day}}').join(day);
-  result = result.split('{{title}}').join(slug);
-  result = result.split('{{slug}}').join(slug);
-
-  return `notes/${result}`;
+  if (template === 'daily-note') {
+    return `notes/Daily/${date}.md`;
+  }
+  if (template === 'meeting-note') {
+    const slug = (title || 'meeting').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    return `notes/Meetings/${date}-${slug}.md`;
+  }
+  const slug = (title || 'untitled').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  return `notes/${slug}.md`;
 }
 
 export default function TemplateModal({ onClose, onCreated, api }) {
@@ -183,15 +175,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
   const [outputPath, setOutputPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [config, setConfig] = useState(null);
-
-  // Fetch config on mount
-  useEffect(() => {
-    fetch(`${api}/api/config`)
-      .then((r) => r.json())
-      .then((data) => setConfig(data))
-      .catch(() => setConfig({}));
-  }, [api]);
+  const [existingPath, setExistingPath] = useState(null); // set when 409 received
 
   useEffect(() => {
     fetch(`${api}/api/templates`)
@@ -200,7 +184,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
         setTemplates(data);
         if (data.length > 0) {
           setSelectedTemplate(data[0].name);
-          setOutputPath(getDefaultPath(data[0].name, '', config));
+          setOutputPath(getDefaultPath(data[0].name, ''));
         }
       })
       .catch(() => setError('Failed to load templates'));
@@ -208,9 +192,9 @@ export default function TemplateModal({ onClose, onCreated, api }) {
 
   useEffect(() => {
     if (selectedTemplate) {
-      setOutputPath(getDefaultPath(selectedTemplate, title, config));
+      setOutputPath(getDefaultPath(selectedTemplate, title));
     }
-  }, [selectedTemplate, title, config]);
+  }, [selectedTemplate, title]);
 
   const handleKeyDown = useCallback(
     (e) => {
@@ -224,18 +208,13 @@ export default function TemplateModal({ onClose, onCreated, api }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  const handleCreate = async () => {
-    if (!selectedTemplate) {
-      setError('Please select a template');
-      return;
-    }
-    if (!outputPath.trim()) {
-      setError('Please enter an output path');
-      return;
-    }
+  const handleCreate = async (overwrite = false) => {
+    if (!selectedTemplate) { setError('Please select a template'); return; }
+    if (!outputPath.trim()) { setError('Please enter an output path'); return; }
 
     setLoading(true);
     setError('');
+    setExistingPath(null);
 
     try {
       const res = await fetch(`${api}/api/template`, {
@@ -245,8 +224,16 @@ export default function TemplateModal({ onClose, onCreated, api }) {
           templateName: selectedTemplate,
           outputPath: outputPath.trim(),
           vars: { title: title || 'Untitled' },
+          overwrite,
         }),
       });
+
+      if (res.status === 409) {
+        const data = await res.json();
+        setExistingPath(data.path);
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
         const data = await res.json();
@@ -266,7 +253,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
-          <span style={styles.title}>New Note</span>
+          <span style={styles.title}>New note from template</span>
           <button
             style={styles.closeBtn}
             onClick={onClose}
@@ -340,12 +327,46 @@ export default function TemplateModal({ onClose, onCreated, api }) {
               onFocus={(e) => { e.currentTarget.style.borderColor = '#007acc'; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = '#3c3c3c'; }}
             />
-            <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
-              Path is relative to project root. Change template paths in config.json.
-            </div>
           </div>
 
           {error && <div style={styles.error}>{error}</div>}
+
+          {existingPath && (
+            <div style={{
+              background: 'rgba(229,192,123,0.08)',
+              border: '1px solid rgba(229,192,123,0.35)',
+              borderRadius: '6px',
+              padding: '10px 14px',
+              fontSize: '12px',
+              color: '#e5c07b',
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: '6px' }}>A note already exists at this path.</div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  style={{ ...styles.btn(false), fontSize: '12px', padding: '5px 12px' }}
+                  onClick={async () => {
+                    try {
+                      const r = await fetch(`${api}/api/file?path=${encodeURIComponent(existingPath)}`);
+                      const text = await r.text();
+                      onCreated(existingPath, text);
+                    } catch { onCreated(existingPath, ''); }
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#444'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#3a3a3a'; }}
+                >
+                  Open existing
+                </button>
+                <button
+                  style={{ ...styles.btn(false), fontSize: '12px', padding: '5px 12px', color: '#f44747', borderColor: 'rgba(244,71,71,0.4)' }}
+                  onClick={() => handleCreate(true)}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(244,71,71,0.1)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#3a3a3a'; }}
+                >
+                  Overwrite
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={styles.footer}>
@@ -359,7 +380,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
           </button>
           <button
             style={{ ...styles.btn(true), opacity: loading ? 0.7 : 1 }}
-            onClick={handleCreate}
+            onClick={() => handleCreate(false)}
             disabled={loading}
             onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = '#0086dc'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = '#007acc'; }}

@@ -1,3 +1,4 @@
+// NB App
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import FileTree from './components/FileTree.jsx';
@@ -6,6 +7,7 @@ import TagBar from './components/TagBar.jsx';
 import Toolbar from './components/Toolbar.jsx';
 import TemplateModal from './components/TemplateModal.jsx';
 import ShortcutsPanel from './components/ShortcutsPanel.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
 import TabBar from './components/TabBar.jsx';
 
@@ -16,14 +18,27 @@ export default function App() {
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   // Tabs — [{ path, pinned }]; unsaved tracked by comparing content vs savedContent per path
-  const [tabs, setTabs] = useState([]);
+  // Initialise from localStorage so tabs survive a reload
+  const [tabs, setTabs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nb:tabs') || '[]'); } catch { return []; }
+  });
   const [unsavedPaths, setUnsavedPaths] = useState(new Set());
+  const [templates, setTemplates] = useState([]);
   const wsRef = useRef(null);
   const saveTimerRef = useRef(null);
   const editorRef = useRef(null);
+
+  // Load templates once
+  useEffect(() => {
+    fetch(`${API}/api/templates`)
+      .then(r => r.json())
+      .then(setTemplates)
+      .catch(() => {});
+  }, []);
 
   // WebSocket — live file-tree updates
   useEffect(() => {
@@ -43,6 +58,18 @@ export default function App() {
     return () => { if (wsRef.current) wsRef.current.close(); };
   }, []);
 
+  // Persist tabs + active tab to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('nb:tabs', JSON.stringify(tabs));
+  }, [tabs]);
+
+  useEffect(() => {
+    if (currentFile) localStorage.setItem('nb:activeTab', currentFile);
+    // Don't remove on null — that's just the initial render state, not an
+    // intentional close-all, and it would wipe the key before the restore
+    // effect on the same render cycle gets a chance to read it.
+  }, [currentFile]);
+
   // Load file from server and open/switch to its tab
   const openFile = useCallback(async (filePath) => {
     try {
@@ -58,6 +85,14 @@ export default function App() {
       console.error('Error opening file:', err);
     }
   }, []);
+
+  // On first load, reopen the last active file (tabs are already restored via useState init)
+  useEffect(() => {
+    const savedActive = localStorage.getItem('nb:activeTab');
+    if (savedActive) {
+      openFile(savedActive);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switch to an already-open tab (no fetch if it's the same file)
   const switchTab = useCallback((filePath) => {
@@ -176,6 +211,7 @@ export default function App() {
         isUnsaved={isUnsaved}
         onSave={() => saveFile(currentFile, content)}
         onNewTemplate={() => setShowTemplateModal(true)}
+        onSettings={() => setShowSettings(true)}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentFile={currentFile}
@@ -205,14 +241,16 @@ export default function App() {
         </div>
 
         <div className="main-area">
+          {/* ShortcutsPanel lives outside the conditional so it never unmounts */}
+          <ShortcutsPanel
+            content={content}
+            setContent={handleContentChange}
+            filePath={currentFile}
+            onScrollTo={text => editorRef.current?.scrollToText(text)}
+            templates={templates}
+          />
           {currentFile ? (
             <div className="editor-area">
-              <ShortcutsPanel
-                content={content}
-                setContent={handleContentChange}
-                filePath={currentFile}
-                onScrollTo={text => editorRef.current?.scrollToText(text)}
-              />
               <div className="editor-with-outline">
                 <EditorPane
                   ref={editorRef}
@@ -249,6 +287,10 @@ export default function App() {
           onCreated={handleTemplateCreated}
           api={API}
         />
+      )}
+
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

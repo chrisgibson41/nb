@@ -7,39 +7,108 @@
   overflow: hidden;
 }
 
+/* ── Frontmatter properties bar ──────────────────────────────────────────── */
+.cm-md-fm-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid #252525;
+  cursor: text;
+  user-select: none;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.cm-fm-date {
+  font-size: 12px;
+  color: #7a8a96;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.cm-fm-date::before {
+  content: '';
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%237a8a96' stroke-width='2'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.8;
+}
+
+.cm-fm-tags {
+  display: inline-flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cm-fm-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(0, 122, 204, 0.12);
+  border: 1px solid rgba(0, 122, 204, 0.25);
+  color: #5aabde;
+  font-weight: 500;
+}
+
+.cm-fm-field {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #232323;
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  padding: 2px 8px;
+}
+.cm-fm-key {
+  color: #555;
+  font-weight: 500;
+}
+.cm-fm-key::after { content: ':'; }
+.cm-fm-val { color: #7a8a96; }
+
+.cm-fm-empty {
+  font-size: 12px;
+  color: #3a3a3a;
+  font-style: italic;
+}
+
 /* ── Headings ────────────────────────────────────────────────────────────── */
 /* Target both the line and any syntax-highlight spans inside (oneDark overrides) */
 .cm-line.cm-md-h1,
 .cm-line.cm-md-h1 span {
-  font-size: 2em;
+  font-size: 1.5em;
   font-weight: 700;
   color: #e6edf3 !important;
   line-height: 1.3;
-  padding-top: 0.25em;
-  padding-bottom: 0.1em;
+  padding-top: 0.2em;
+  padding-bottom: 0.05em;
 }
 .cm-line.cm-md-h2,
 .cm-line.cm-md-h2 span {
-  font-size: 1.55em;
+  font-size: 1.25em;
   font-weight: 700;
   color: #c9d1d9 !important;
   line-height: 1.35;
 }
 .cm-line.cm-md-h3,
 .cm-line.cm-md-h3 span {
-  font-size: 1.25em;
-  font-weight: 700;
+  font-size: 1.1em;
+  font-weight: 600;
   color: #b1bac4 !important;
 }
 .cm-line.cm-md-h4,
 .cm-line.cm-md-h4 span {
-  font-size: 1.1em;
+  font-size: 1em;
   font-weight: 600;
   color: #9ba5af !important;
 }
 .cm-line.cm-md-h5,
 .cm-line.cm-md-h5 span {
-  font-size: 1em;
+  font-size: 0.95em;
   font-weight: 600;
   color: #8b949e !important;
 }

@@ -1,15 +1,25 @@
-import React, { useState, useEffect, useMemo } from 'react'
-
-const API = 'http://localhost:3001'
+import React, { useState, useMemo } from 'react'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function matchesTemplate(content, filePath, template) {
   const tags = template.tags || []
   if (tags.length > 0) {
-    const tagMatch = content.match(/^---[\s\S]*?^tags:\s*\[([^\]]*)\]/m)
-    if (tagMatch) {
-      const noteTags = tagMatch[1].split(',').map(t => t.trim().replace(/['"]/g, ''))
+    // Match inline YAML arrays: tags: [daily, journal]
+    const inlineMatch = content.match(/^---[\s\S]*?^tags:\s*\[([^\]]*)\]/m)
+    if (inlineMatch) {
+      const noteTags = inlineMatch[1].split(',').map(t => t.trim().replace(/['"]/g, ''))
+      if (tags.some(t => noteTags.includes(t))) return true
+    }
+    // Match block-style YAML arrays (gray-matter stringifies to this):
+    //   tags:
+    //     - daily
+    //     - journal
+    const blockMatch = content.match(/^---[\s\S]*?^tags:\s*\n((?:[ \t]*-[ \t]+\S.*\n?)*)/m)
+    if (blockMatch) {
+      const noteTags = blockMatch[1].split('\n')
+        .map(l => l.replace(/^[ \t]*-[ \t]+/, '').trim().replace(/['"]/g, ''))
+        .filter(Boolean)
       if (tags.some(t => noteTags.includes(t))) return true
     }
   }
@@ -21,25 +31,12 @@ function matchesTemplate(content, filePath, template) {
   return false
 }
 
-function parseSection(content, sectionHeading) {
-  const lines = content.split('\n')
-  const re = new RegExp(`^## ${sectionHeading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i')
-  let inSection = false
-  const entries = []
-
-  for (const line of lines) {
-    if (re.test(line)) { inSection = true; continue }
-    if (inSection && /^## /.test(line)) break
-    if (inSection) {
-      const m = line.match(/^### (.+)/)
-      if (m) {
-        // Strip legacy "HH:MM — " prefix if present
-        const title = m[1].replace(/^\d{2}:\d{2}\s*—\s*/, '').trim()
-        entries.push(title)
-      }
-    }
-  }
-  return entries
+// Derive a singular button label from the shortcut definition.
+// Template can override with `singularLabel`; otherwise we strip a trailing 's'.
+function singularize(shortcut) {
+  if (shortcut.singularLabel) return shortcut.singularLabel
+  const base = shortcut.label || shortcut.section
+  return base.replace(/ies$/, 'y').replace(/ses$/, 'se').replace(/s$/, '')
 }
 
 function insertEntry(content, shortcut, title) {
@@ -77,41 +74,17 @@ const S = {
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: '6px',
-    padding: '0 24px',
-    minHeight: '38px',
+    padding: '0 16px',
+    minHeight: '36px',
     background: '#252526',
     borderBottom: '1px solid #3c3c3c',
     flexShrink: 0,
   },
   divider: {
     width: '1px',
-    height: '18px',
+    height: '16px',
     background: '#3c3c3c',
     flexShrink: 0,
-    margin: '0 4px',
-  },
-  label: {
-    fontSize: '10px',
-    fontWeight: 700,
-    letterSpacing: '0.08em',
-    color: '#555',
-    textTransform: 'uppercase',
-    marginRight: '2px',
-    flexShrink: 0,
-  },
-  chip: {
-    padding: '3px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    color: '#c8c8c8',
-    background: '#37373d',
-    border: '1px solid #4a4a4a',
-    cursor: 'pointer',
-    transition: 'background 0.15s, border-color 0.15s',
-    whiteSpace: 'nowrap',
-    maxWidth: '220px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
   },
   addBtn: {
     padding: '3px 10px',
@@ -162,9 +135,11 @@ const S = {
 
 // ── Per-shortcut group ────────────────────────────────────────────────────────
 
-function ShortcutGroup({ shortcut, entries, content, setContent, onScrollTo, isFirst }) {
+function ShortcutGroup({ shortcut, content, setContent, onScrollTo, isFirst }) {
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
+
+  const btnLabel = singularize(shortcut)
 
   function handleAdd() {
     const t = title.trim()
@@ -179,53 +154,24 @@ function ShortcutGroup({ shortcut, entries, content, setContent, onScrollTo, isF
     setTimeout(() => onScrollTo?.(heading), 80)
   }
 
-  function handleChipHover(e, enter) {
-    e.currentTarget.style.background = enter ? '#4a4a52' : '#37373d'
-    e.currentTarget.style.borderColor = enter ? '#666' : '#4a4a4a'
-  }
-
-  function handleAddBtnHover(e, enter) {
-    e.currentTarget.style.background = enter ? '#007acc22' : 'transparent'
-  }
-
   return (
     <>
       {!isFirst && <div style={S.divider} />}
-      <span style={S.label}>{shortcut.label}</span>
-
-      {entries.length === 0 && !showForm && (
-        <span style={{ fontSize: '12px', color: '#444', fontStyle: 'italic' }}>
-          None yet
-        </span>
-      )}
-
-      {entries.map((e, i) => (
-        <span
-          key={i}
-          style={S.chip}
-          title={e}
-          onClick={() => onScrollTo?.(e)}
-          onMouseEnter={ev => handleChipHover(ev, true)}
-          onMouseLeave={ev => handleChipHover(ev, false)}
-        >
-          {e}
-        </span>
-      ))}
 
       {!showForm ? (
         <button
           style={S.addBtn}
           onClick={() => { setTitle(''); setShowForm(true) }}
-          onMouseEnter={e => handleAddBtnHover(e, true)}
-          onMouseLeave={e => handleAddBtnHover(e, false)}
+          onMouseEnter={e => { e.currentTarget.style.background = '#007acc22' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
         >
-          + Add {shortcut.label.replace(/s$/, '')}
+          + Add {btnLabel}
         </button>
       ) : (
         <div style={S.form}>
           <input
             style={{ ...S.input, width: '200px' }}
-            placeholder={`${shortcut.label.replace(/s$/, '')} title…`}
+            placeholder={`${btnLabel} title…`}
             value={title}
             onChange={e => setTitle(e.target.value)}
             onKeyDown={e => {
@@ -243,19 +189,26 @@ function ShortcutGroup({ shortcut, entries, content, setContent, onScrollTo, isF
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-
-export default function ShortcutsPanel({ content, setContent, filePath, onScrollTo }) {
-  const [templates, setTemplates] = useState([])
-
-  useEffect(() => {
-    fetch(`${API}/api/templates`)
-      .then(r => r.json())
-      .then(setTemplates)
-      .catch(() => {})
-  }, [])
-
+//
+// Shortcuts are driven entirely by template frontmatter. Add or extend shortcut
+// groups by editing your template's `_shortcuts` array, e.g.:
+//
+//   _shortcuts:
+//     - label: Meetings          # button says "+ Add Meeting"
+//       section: Meetings        # h2 section to insert under
+//       heading: "{{title}}"     # h3 heading template ({{title}} = user input)
+//       body: |                  # optional body inserted after the heading
+//         **Attendees:**
+//         **Notes:**
+//     - label: Decisions
+//       section: Decisions
+//       singularLabel: Decision  # override auto-singularization
+//       heading: "{{title}}"
+//       body: ""
+//
+export default function ShortcutsPanel({ content, setContent, filePath, onScrollTo, templates = [] }) {
   const matchedTemplate = useMemo(() => {
-    if (!content && !filePath) return null
+    if (!filePath) return null
     return templates.find(t => matchesTemplate(content, filePath, t)) || null
   }, [templates, content, filePath])
 
@@ -265,20 +218,16 @@ export default function ShortcutsPanel({ content, setContent, filePath, onScroll
 
   return (
     <div style={S.bar}>
-      {shortcuts.map((shortcut, i) => {
-        const entries = parseSection(content, shortcut.section)
-        return (
-          <ShortcutGroup
-            key={i}
-            shortcut={shortcut}
-            entries={entries}
-            content={content}
-            setContent={setContent}
-            onScrollTo={onScrollTo}
-            isFirst={i === 0}
-          />
-        )
-      })}
+      {shortcuts.map((shortcut, i) => (
+        <ShortcutGroup
+          key={i}
+          shortcut={shortcut}
+          content={content}
+          setContent={setContent}
+          onScrollTo={onScrollTo}
+          isFirst={i === 0}
+        />
+      ))}
     </div>
   )
 }

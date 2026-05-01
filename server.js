@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
+const { exec } = require('child_process');
 const { WebSocketServer } = require('ws');
 const chokidar = require('chokidar');
 const matter = require('gray-matter');
@@ -11,27 +13,85 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const PORT = 3003;
+const PORT = 3001;
 
 // --- Config ---
 const CONFIG_FILE = path.resolve('./config.json');
+
+function expandHome(p) {
+  if (!p) return p;
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
 function loadConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
-  catch { return { notesDir: './notes', templatesDir: './templates', templatePaths: { 'daily-note': 'Daily/{{date}}.md', 'meeting-note': 'Meetings/{{date}}-{{slug}}.md', 'blank': '{{title}}.md' } }; }
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    return {
+      notesDir: './notes',
+      templatesDir: './templates',
+      templatePaths: {
+        'daily-note': 'Daily/{{date}}.md',
+        'meeting-note': 'Meetings/{{date}}-{{slug}}.md',
+        'blank': '{{title}}.md',
+      },
+    };
+  }
 }
-function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
 
-const cfg = loadConfig();
-const NOTES_DIR = path.resolve(cfg.notesDir);
-const TEMPLATES_DIR = path.resolve(cfg.templatesDir);
+function saveConfig(cfg) {
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
 
-// Ensure notes and templates directories exist
-if (!fs.existsSync(NOTES_DIR)) {
-  fs.mkdirSync(NOTES_DIR, { recursive: true });
+// Remove a top-level YAML key (and its indented children) from a frontmatter
+// block using line-by-line text manipulation — no YAML parse/stringify, so date
+// strings, special values etc. are never coerced to JS types and back.
+function stripFrontmatterKey(raw, key) {
+  if (!raw.startsWith('---\n') && !raw.startsWith('---\r\n')) return raw;
+  const closeIdx = raw.indexOf('\n---', 4);
+  if (closeIdx === -1) return raw;
+
+  const fmLines = raw.slice(4, closeIdx).split('\n');
+  const after   = raw.slice(closeIdx); // keeps the '\n---\n' and body
+
+  const keyRe = new RegExp(`^${key}\\s*:`);
+  const filtered = [];
+  let skipping = false; // currently inside the block to remove
+
+  for (let i = 0; i < fmLines.length; i++) {
+    const line = fmLines[i];
+
+    if (!skipping) {
+      if (keyRe.test(line)) { skipping = true; continue; }
+      filtered.push(line);
+      continue;
+    }
+
+    // Inside the block: skip blank lines and any line that is indented
+    // (blank lines can appear inside YAML literal/folded block scalars)
+    if (line.trim() === '') continue;
+    if (/^[ \t]/.test(line)) continue;
+
+    // Non-empty, non-indented line — we've left the block
+    skipping = false;
+    filtered.push(line);
+  }
+
+  return '---\n' + filtered.join('\n') + after;
 }
-if (!fs.existsSync(TEMPLATES_DIR)) {
-  fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+
+// Mutable — updated live when config is changed via the settings UI
+let cfg = loadConfig();
+let NOTES_DIR = path.resolve(expandHome(cfg.notesDir));
+let TEMPLATES_DIR = path.resolve(expandHome(cfg.templatesDir));
+
+function ensureDirs() {
+  if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
+  if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
 }
+ensureDirs();
 
 app.use(cors());
 app.use(express.json());
@@ -44,36 +104,77 @@ wss.on('connection', (ws) => {
 function broadcast(data) {
   const msg = JSON.stringify(data);
   wss.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(msg);
-    }
+    if (client.readyState === 1) client.send(msg);
   });
 }
 
-// Watch notes directory
-const watcher = chokidar.watch(NOTES_DIR, {
-  ignoreInitial: true,
-  persistent: true,
-});
+// --- File watcher (re-created when notes dir changes) ---
+let watcher = null;
 
-watcher.on('all', () => {
-  broadcast({ type: 'tree-change' });
-});
+function startWatcher(dir) {
+  if (watcher) {
+    watcher.close();
+    watcher = null;
+  }
+  if (!fs.existsSync(dir)) return;
+  watcher = chokidar.watch(dir, { ignoreInitial: true, persistent: true });
+  watcher.on('all', () => broadcast({ type: 'tree-change' }));
+}
+
+startWatcher(NOTES_DIR);
+
+// --- Git auto-sync ---
+// Commit each file save immediately; push at most once every 5 minutes.
+let pendingPush = false;
+
+function gitCommitFile(filePath) {
+  const repoDir = NOTES_DIR;
+  const rel = path.relative(repoDir, filePath);
+  const cmd = [
+    `git -C ${JSON.stringify(repoDir)} add ${JSON.stringify(filePath)}`,
+    `git -C ${JSON.stringify(repoDir)} commit -m ${JSON.stringify(`notes: update ${rel}`)}`,
+  ].join(' && ');
+
+  exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      // "nothing to commit" is not an error worth logging
+      if ((stderr || '').includes('nothing to commit')) return;
+      console.error('[git] commit failed:', (stderr || err.message).trim());
+      return;
+    }
+    console.log('[git] committed:', rel);
+    pendingPush = true;
+  });
+}
+
+function gitPushNow() {
+  if (!pendingPush) return;
+  const repoDir = NOTES_DIR;
+  exec(`git -C ${JSON.stringify(repoDir)} push`, (err, _stdout, stderr) => {
+    if (err) {
+      console.error('[git] push failed:', (stderr || err.message).trim());
+      return;
+    }
+    console.log('[git] pushed to remote');
+    pendingPush = false;
+  });
+}
+
+// Push every 5 minutes if there are uncommitted/unpushed changes
+const GIT_PUSH_INTERVAL_MS = 5 * 60 * 1000;
+setInterval(gitPushNow, GIT_PUSH_INTERVAL_MS);
 
 // --- Path safety ---
 function safePath(inputPath, baseDir) {
-  // If absolute path, resolve directly but check it's within allowed dirs
   let resolved;
   if (path.isAbsolute(inputPath)) {
     resolved = path.resolve(inputPath);
   } else {
     resolved = path.resolve(baseDir, inputPath);
   }
-
-  // Allow paths within NOTES_DIR or TEMPLATES_DIR
+  // Read current dirs each call so changes take effect immediately
   const notesResolved = path.resolve(NOTES_DIR);
   const templatesResolved = path.resolve(TEMPLATES_DIR);
-
   if (!resolved.startsWith(notesResolved) && !resolved.startsWith(templatesResolved)) {
     throw new Error('Path traversal detected');
   }
@@ -81,35 +182,31 @@ function safePath(inputPath, baseDir) {
 }
 
 // --- Build file tree ---
-function buildTree(dirPath) {
+// skipPaths: Set of absolute paths to exclude (e.g. templatesDir)
+// Only .md files are included; hidden entries (starting with '.') are always skipped.
+function buildTree(dirPath, skipPaths) {
   const name = path.basename(dirPath);
+  if (name.startsWith('.')) return null; // skip .git, .DS_Store, etc.
   const stat = fs.statSync(dirPath);
-
   if (stat.isDirectory()) {
+    if (skipPaths && skipPaths.has(dirPath)) return null;
     let children = [];
     try {
-      const entries = fs.readdirSync(dirPath);
-      children = entries
+      children = fs.readdirSync(dirPath)
         .map((entry) => {
-          try {
-            return buildTree(path.join(dirPath, entry));
-          } catch {
-            return null;
-          }
+          try { return buildTree(path.join(dirPath, entry), skipPaths); } catch { return null; }
         })
         .filter(Boolean)
         .sort((a, b) => {
-          // Directories first, then files
           if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
           return a.name.localeCompare(b.name);
         });
-    } catch {
-      children = [];
-    }
+    } catch { children = []; }
     return { name, path: dirPath, type: 'dir', children };
-  } else {
-    return { name, path: dirPath, type: 'file' };
   }
+  // Only show markdown files
+  if (!name.endsWith('.md')) return null;
+  return { name, path: dirPath, type: 'file' };
 }
 
 // --- API Routes ---
@@ -117,17 +214,36 @@ function buildTree(dirPath) {
 // GET /api/config
 app.get('/api/config', (req, res) => {
   try {
-    res.json(loadConfig());
+    res.json({ ...loadConfig(), _resolved: { notesDir: NOTES_DIR, templatesDir: TEMPLATES_DIR } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/config
+// PUT /api/config — saves config and applies directory changes live
 app.put('/api/config', (req, res) => {
   try {
-    saveConfig(req.body);
-    res.json({ success: true });
+    const incoming = req.body;
+    // Preserve templatePaths and any other keys not sent by the UI
+    const current = loadConfig();
+    const merged = { ...current, ...incoming };
+    saveConfig(merged);
+    cfg = merged;
+
+    const newNotesDir = path.resolve(expandHome(cfg.notesDir));
+    const newTemplatesDir = path.resolve(expandHome(cfg.templatesDir));
+    const notesDirChanged = newNotesDir !== NOTES_DIR;
+
+    NOTES_DIR = newNotesDir;
+    TEMPLATES_DIR = newTemplatesDir;
+    ensureDirs();
+
+    if (notesDirChanged) {
+      startWatcher(NOTES_DIR);
+      broadcast({ type: 'tree-change' });
+    }
+
+    res.json({ success: true, notesDir: NOTES_DIR, templatesDir: TEMPLATES_DIR });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -138,11 +254,10 @@ app.get('/api/tree', (req, res) => {
   try {
     const rootParam = req.query.root;
     const rootDir = rootParam ? path.resolve(rootParam) : NOTES_DIR;
-    if (!fs.existsSync(rootDir)) {
-      fs.mkdirSync(rootDir, { recursive: true });
-    }
-    const tree = buildTree(rootDir);
-    res.json(tree);
+    if (!fs.existsSync(rootDir)) fs.mkdirSync(rootDir, { recursive: true });
+    // Exclude the templates directory — it's shown separately in the sidebar
+    const skipPaths = new Set([path.resolve(TEMPLATES_DIR)]);
+    res.json(buildTree(rootDir, skipPaths));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -152,11 +267,8 @@ app.get('/api/tree', (req, res) => {
 app.get('/api/file', (req, res) => {
   try {
     const filePath = safePath(req.query.path, NOTES_DIR);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    const content = fs.readFileSync(filePath, 'utf-8');
-    res.type('text/plain').send(content);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    res.type('text/plain').send(fs.readFileSync(filePath, 'utf-8'));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -169,11 +281,11 @@ app.put('/api/file', (req, res) => {
     if (!filePath) return res.status(400).json({ error: 'path required' });
     const safe = safePath(filePath, NOTES_DIR);
     const dir = path.dirname(safe);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(safe, content ?? '', 'utf-8');
     res.json({ success: true, path: safe });
+    // Commit asynchronously — don't block the save response
+    gitCommitFile(safe);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -183,15 +295,10 @@ app.put('/api/file', (req, res) => {
 app.delete('/api/file', (req, res) => {
   try {
     const filePath = safePath(req.query.path, NOTES_DIR);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
     const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      fs.rmSync(filePath, { recursive: true });
-    } else {
-      fs.unlinkSync(filePath);
-    }
+    if (stat.isDirectory()) fs.rmSync(filePath, { recursive: true });
+    else fs.unlinkSync(filePath);
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -218,13 +325,9 @@ app.post('/api/rename', (req, res) => {
     if (!oldPath || !newPath) return res.status(400).json({ error: 'oldPath and newPath required' });
     const safeOld = safePath(oldPath, NOTES_DIR);
     const safeNew = safePath(newPath, NOTES_DIR);
-    if (!fs.existsSync(safeOld)) {
-      return res.status(404).json({ error: 'Source not found' });
-    }
+    if (!fs.existsSync(safeOld)) return res.status(404).json({ error: 'Source not found' });
     const newDir = path.dirname(safeNew);
-    if (!fs.existsSync(newDir)) {
-      fs.mkdirSync(newDir, { recursive: true });
-    }
+    if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true });
     fs.renameSync(safeOld, safeNew);
     res.json({ success: true });
   } catch (err) {
@@ -235,27 +338,19 @@ app.post('/api/rename', (req, res) => {
 // GET /api/search
 app.get('/api/search', (req, res) => {
   try {
-    const { q, root } = req.query;
+    const { q } = req.query;
     if (!q) return res.json([]);
-    const searchDir = root ? path.resolve(root) : NOTES_DIR;
+    const searchDir = NOTES_DIR;
     const results = [];
     const query = q.toLowerCase();
 
     function searchDir_(dir) {
       let entries;
-      try {
-        entries = fs.readdirSync(dir);
-      } catch {
-        return;
-      }
+      try { entries = fs.readdirSync(dir); } catch { return; }
       for (const entry of entries) {
         const fullPath = path.join(dir, entry);
         let stat;
-        try {
-          stat = fs.statSync(fullPath);
-        } catch {
-          continue;
-        }
+        try { stat = fs.statSync(fullPath); } catch { continue; }
         if (stat.isDirectory()) {
           searchDir_(fullPath);
         } else if (entry.endsWith('.md')) {
@@ -272,12 +367,8 @@ app.get('/api/search', (req, res) => {
               const end = Math.min(content.length, idx + query.length + 60);
               snippet = (start > 0 ? '...' : '') + content.slice(start, end) + (end < content.length ? '...' : '');
             }
-          } catch {
-            // skip unreadable files
-          }
-          if (nameMatch || contentMatch) {
-            results.push({ path: fullPath, name: entry, snippet });
-          }
+          } catch { /* skip */ }
+          if (nameMatch || contentMatch) results.push({ path: fullPath, name: entry, snippet });
         }
       }
     }
@@ -292,9 +383,7 @@ app.get('/api/search', (req, res) => {
 // GET /api/templates
 app.get('/api/templates', (req, res) => {
   try {
-    if (!fs.existsSync(TEMPLATES_DIR)) {
-      return res.json([]);
-    }
+    if (!fs.existsSync(TEMPLATES_DIR)) return res.json([]);
     const files = fs.readdirSync(TEMPLATES_DIR).filter((f) => f.endsWith('.md'));
     const templates = files.map((f) => {
       const raw = fs.readFileSync(path.join(TEMPLATES_DIR, f), 'utf-8');
@@ -321,59 +410,61 @@ app.post('/api/template', (req, res) => {
       return res.status(400).json({ error: 'templateName and outputPath required' });
     }
     const templateFile = path.join(TEMPLATES_DIR, templateName.endsWith('.md') ? templateName : `${templateName}.md`);
-    if (!fs.existsSync(templateFile)) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
+    if (!fs.existsSync(templateFile)) return res.status(404).json({ error: 'Template not found' });
 
     const rawTemplate = fs.readFileSync(templateFile, 'utf-8');
-    // Strip _shortcuts (template-only metadata) from the generated note's frontmatter
-    const parsedTemplate = matter(rawTemplate);
-    delete parsedTemplate.data._shortcuts;
-    // Rebuild: if there's remaining frontmatter data, keep it; otherwise use raw content
-    let content;
-    const remainingKeys = Object.keys(parsedTemplate.data);
-    if (remainingKeys.length > 0) {
-      content = matter.stringify(parsedTemplate.content, parsedTemplate.data);
-    } else {
-      // No frontmatter keys left — just use the body
-      content = parsedTemplate.content.replace(/^\n/, '');
-    }
 
+    // Build replacements first
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const datetime = `${date} ${time}`;
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const weekday = weekdays[now.getDay()];
-    const year = String(now.getFullYear());
-    const month = pad(now.getMonth() + 1);
-    const day = pad(now.getDate());
-    const title = vars?.title || 'Untitled';
-
     const replacements = {
       '{{date}}': date,
       '{{time}}': time,
-      '{{datetime}}': datetime,
-      '{{title}}': title,
-      '{{year}}': year,
-      '{{month}}': month,
-      '{{day}}': day,
-      '{{weekday}}': weekday,
-      ...(vars || {}),
+      '{{datetime}}': `${date} ${time}`,
+      '{{title}}': vars?.title || 'Untitled',
+      '{{year}}': String(now.getFullYear()),
+      '{{month}}': pad(now.getMonth() + 1),
+      '{{day}}': pad(now.getDate()),
+      '{{weekday}}': weekdays[now.getDay()],
     };
+    // Allow callers to pass extra {{custom}} vars — keys must already include the braces
+    // to avoid accidentally replacing substrings inside already-substituted values.
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) {
+        const wrapped = k.startsWith('{{') ? k : `{{${k}}}`;
+        if (!replacements[wrapped]) replacements[wrapped] = String(v);
+      }
+    }
 
+    // Step 1: substitute all {{variables}} on the raw string first, so YAML
+    // never sees tokens like {{date}} which it misparses as flow mappings.
+    let content = rawTemplate;
     for (const [placeholder, value] of Object.entries(replacements)) {
       content = content.split(placeholder).join(value);
     }
 
+    // Step 2: strip _shortcuts from the frontmatter using plain text manipulation.
+    // We deliberately avoid a parse→delete→stringify roundtrip because gray-matter
+    // coerces bare dates (2026-05-01) to JS Date objects, then serialises them back
+    // as timestamps — corrupting the frontmatter.
+    content = stripFrontmatterKey(content, '_shortcuts');
+
     const safeOut = safePath(outputPath, NOTES_DIR);
-    const outDir = path.dirname(safeOut);
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
+
+    // Guard against silent overwrites — require explicit ?overwrite=true
+    if (fs.existsSync(safeOut) && req.body.overwrite !== true) {
+      return res.status(409).json({ error: 'File already exists', path: safeOut });
     }
+
+    const outDir = path.dirname(safeOut);
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(safeOut, content, 'utf-8');
     res.json({ success: true, path: safeOut, content });
+    // Commit the new file asynchronously
+    gitCommitFile(safeOut);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -381,4 +472,6 @@ app.post('/api/template', (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`  Notes:     ${NOTES_DIR}`);
+  console.log(`  Templates: ${TEMPLATES_DIR}`);
 });
