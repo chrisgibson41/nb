@@ -123,46 +123,36 @@ function startWatcher(dir) {
 
 startWatcher(NOTES_DIR);
 
-// --- Git auto-sync ---
-// Commit each file save immediately; push at most once every 5 minutes.
-let pendingPush = false;
+// --- Git auto-commit ---
+// Commit each file save. Uses the git repo that contains NOTES_DIR.
 
 function gitCommitFile(filePath) {
+  // Use NOTES_DIR as the -C dir; git walks up to find the repo root automatically.
   const repoDir = NOTES_DIR;
   const rel = path.relative(repoDir, filePath);
-  const cmd = [
-    `git -C ${JSON.stringify(repoDir)} add ${JSON.stringify(filePath)}`,
-    `git -C ${JSON.stringify(repoDir)} commit -m ${JSON.stringify(`notes: update ${rel}`)}`,
-  ].join(' && ');
 
-  exec(cmd, (err, stdout, stderr) => {
-    if (err) {
-      // "nothing to commit" is not an error worth logging
-      if ((stderr || '').includes('nothing to commit')) return;
-      console.error('[git] commit failed:', (stderr || err.message).trim());
+  // Step 1: stage the file
+  exec(`git -C ${JSON.stringify(repoDir)} add ${JSON.stringify(filePath)}`, (addErr, _out, addStderr) => {
+    if (addErr) {
+      console.error('[git] add failed:', (addStderr || addErr.message).trim());
       return;
     }
-    console.log('[git] committed:', rel);
-    pendingPush = true;
+    // Step 2: check whether anything is actually staged before committing
+    exec(`git -C ${JSON.stringify(repoDir)} diff --cached --quiet`, (diffErr) => {
+      // exit 0 = nothing staged (file unchanged) — skip silently
+      if (!diffErr) return;
+      // exit 1 = staged changes exist — commit
+      const msg = `notes: update ${rel}`;
+      exec(`git -C ${JSON.stringify(repoDir)} commit -m ${JSON.stringify(msg)}`, (commitErr, _o, commitStderr) => {
+        if (commitErr) {
+          console.error('[git] commit failed:', (commitStderr || commitErr.message).trim());
+          return;
+        }
+        console.log('[git] committed:', rel);
+      });
+    });
   });
 }
-
-function gitPushNow() {
-  if (!pendingPush) return;
-  const repoDir = NOTES_DIR;
-  exec(`git -C ${JSON.stringify(repoDir)} push`, (err, _stdout, stderr) => {
-    if (err) {
-      console.error('[git] push failed:', (stderr || err.message).trim());
-      return;
-    }
-    console.log('[git] pushed to remote');
-    pendingPush = false;
-  });
-}
-
-// Push every 5 minutes if there are uncommitted/unpushed changes
-const GIT_PUSH_INTERVAL_MS = 5 * 60 * 1000;
-setInterval(gitPushNow, GIT_PUSH_INTERVAL_MS);
 
 // --- Path safety ---
 function safePath(inputPath, baseDir) {
