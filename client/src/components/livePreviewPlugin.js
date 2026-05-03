@@ -120,12 +120,23 @@ function showMermaidContextMenu(event, svgEl) {
   menuItem('Download PNG', async () => {
     try {
       const blob = await svgToPngBlob(svgEl)
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = 'diagram.png'
-      a.click()
-      URL.revokeObjectURL(url)
+      if (window.electronAPI) {
+        // Electron: show native Save dialog so the user picks the location
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const base64 = reader.result.split(',')[1]
+          await window.electronAPI.savePNG(base64, 'diagram.png')
+        }
+        reader.readAsDataURL(blob)
+      } else {
+        // Browser fallback
+        const url = URL.createObjectURL(blob)
+        const a   = document.createElement('a')
+        a.href     = url
+        a.download = 'diagram.png'
+        a.click()
+        URL.revokeObjectURL(url)
+      }
     } catch (err) {
       console.error('Mermaid download failed:', err)
     }
@@ -154,8 +165,9 @@ class MermaidWidget extends WidgetType {
     const wrap = document.createElement('div')
     wrap.className = 'cm-md-mermaid'
 
-    // Left-click: move cursor inside block to edit
+    // Left-click only: move cursor inside block to edit
     const editHandler = (event) => {
+      if (event.button !== 0) return  // ignore right-click / middle-click
       event.preventDefault()
       view.dispatch({ selection: { anchor: this.blockFrom }, userEvent: 'select' })
       view.focus()
@@ -213,14 +225,33 @@ class HRWidget extends WidgetType {
 }
 
 class CheckboxWidget extends WidgetType {
-  constructor(checked) { super(); this.checked = checked }
-  eq(other) { return other.checked === this.checked }
-  toDOM() {
+  constructor(checked, from) { super(); this.checked = checked; this.from = from }
+  eq(other) { return other.checked === this.checked && other.from === this.from }
+
+  toDOM(view) {
     const el = document.createElement('input')
     el.type = 'checkbox'
     el.checked = this.checked
-    el.disabled = true
     el.className = 'cm-md-checkbox'
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault() // prevent editor focus steal
+      e.stopPropagation()
+    })
+    el.addEventListener('change', () => {
+      // Toggle [ ] ↔ [x] in the source at the known offset
+      const doc   = view.state.doc.toString()
+      const tick  = el.checked ? 'x' : ' '
+      // find [x] or [ ] starting from this.from
+      const re    = /\[[ x]\]/
+      const slice = doc.slice(this.from, this.from + 5)
+      const m     = re.exec(slice)
+      if (m === null) return
+      const pos = this.from + m.index + 1   // position of the space/x
+      view.dispatch({
+        changes: { from: pos, to: pos + 1, insert: tick },
+        userEvent: 'input',
+      })
+    })
     return el
   }
   ignoreEvent() { return false }
@@ -303,8 +334,9 @@ class FrontmatterWidget extends WidgetType {
     bar.className = 'cm-md-fm-bar'
     bar.title = 'Click to edit'
 
-    // Click anywhere on the bar → move cursor into frontmatter for editing
+    // Left-click on the bar → move cursor into frontmatter for editing
     bar.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return  // ignore right-click / middle-click
       e.preventDefault()
       view.dispatch({ selection: { anchor: this.blockFrom + 4 }, userEvent: 'select' })
       view.focus()
@@ -401,6 +433,167 @@ const frontmatterBlockField = StateField.define({
   create(state) { return buildFrontmatterDecoration(state) },
   update(deco, tr) {
     if (tr.docChanged || tr.selection) return buildFrontmatterDecoration(tr.state)
+    return deco
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+
+// ─── Wiki link widget ─────────────────────────────────────────────────────────
+
+class WikiLinkWidget extends WidgetType {
+  constructor(noteName) { super(); this.noteName = noteName }
+  eq(other) { return other.noteName === this.noteName }
+
+  toDOM(view) {
+    const el = document.createElement('span')
+    el.className = 'cm-md-wiki-link'
+    el.textContent = this.noteName
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      view.dom.dispatchEvent(new CustomEvent('nb:wiki-link', {
+        bubbles: true,
+        composed: true,
+        detail: { noteName: this.noteName },
+      }))
+    })
+    return el
+  }
+
+  ignoreEvent() { return false }
+}
+
+// ─── Table widget ─────────────────────────────────────────────────────────────
+
+function parseTableRow(text) {
+  const stripped = text.replace(/^\||\|$/g, '')
+  const cells = stripped.split('|').map(c => c.trim())
+  const isSeparator = cells.every(c => /^[-: ]+$/.test(c) && c.includes('-'))
+  return { cells, isSeparator }
+}
+
+function detectTables(state) {
+  const tables = []
+  let tableStart = -1
+  let tableLines = []
+
+  for (let n = 1; n <= state.doc.lines; n++) {
+    const line = state.doc.line(n)
+    const text = line.text
+    // A table line must contain at least one pipe and start/end with pipe or space-pipe
+    const isTableLine = /^\s*\|/.test(text) && text.includes('|')
+    if (isTableLine) {
+      if (tableStart === -1) tableStart = n
+      tableLines.push({ lineNum: n, from: line.from, to: line.to, row: parseTableRow(text) })
+    } else {
+      if (tableStart !== -1 && tableLines.length >= 2) {
+        tables.push({ start: tableStart, end: tableLines[tableLines.length - 1].lineNum, lines: tableLines })
+      }
+      tableStart = -1
+      tableLines = []
+    }
+  }
+  if (tableStart !== -1 && tableLines.length >= 2) {
+    tables.push({ start: tableStart, end: tableLines[tableLines.length - 1].lineNum, lines: tableLines })
+  }
+  return tables
+}
+
+function simpleInlineHtml(text) {
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '<span class="cm-md-link">$1</span>')
+}
+
+class TableWidget extends WidgetType {
+  constructor(tableLines, blockFrom) {
+    super()
+    this.tableLines = tableLines
+    this.blockFrom = blockFrom
+    this._key = tableLines.map(l => l.row.cells.join('|')).join('\n')
+  }
+  eq(other) { return other._key === this._key }
+
+  toDOM(view) {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-table-wrap'
+
+    wrap.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      view.dispatch({ selection: { anchor: this.blockFrom }, userEvent: 'select' })
+      view.focus()
+    })
+
+    const table = document.createElement('table')
+    table.className = 'cm-md-table'
+    const thead = document.createElement('thead')
+    const tbody = document.createElement('tbody')
+    table.appendChild(thead)
+    table.appendChild(tbody)
+
+    let headerDone = false
+    for (const { row } of this.tableLines) {
+      if (row.isSeparator) { headerDone = true; continue }
+      const tr = document.createElement('tr')
+      for (const cell of row.cells) {
+        const td = document.createElement(!headerDone ? 'th' : 'td')
+        td.innerHTML = simpleInlineHtml(cell)
+        tr.appendChild(td)
+      }
+      if (!headerDone) { thead.appendChild(tr); headerDone = true }
+      else tbody.appendChild(tr)
+    }
+
+    wrap.appendChild(table)
+    return wrap
+  }
+
+  ignoreEvent() { return true }
+}
+
+function buildTableDecorationsFromState(state) {
+  try {
+    const builder = new RangeSetBuilder()
+    const tables = detectTables(state)
+    const cursorLines = new Set()
+    for (const r of state.selection.ranges) {
+      const a = state.doc.lineAt(r.from).number
+      const b = state.doc.lineAt(r.to).number
+      for (let n = a; n <= b; n++) cursorLines.add(n)
+    }
+
+    for (const tbl of tables) {
+      // If cursor is inside, show raw markdown
+      let active = false
+      for (let n = tbl.start; n <= tbl.end; n++) {
+        if (cursorLines.has(n)) { active = true; break }
+      }
+      if (active) continue
+
+      const blockFrom = tbl.lines[0].from
+      const lastLine  = state.doc.line(tbl.end)
+      const blockTo   = tbl.end < state.doc.lines ? lastLine.to + 1 : lastLine.to
+
+      builder.add(blockFrom, blockTo, Decoration.replace({
+        widget: new TableWidget(tbl.lines, blockFrom),
+        block: true,
+      }))
+    }
+    return builder.finish()
+  } catch {
+    return new RangeSetBuilder().finish()
+  }
+}
+
+const tableBlockField = StateField.define({
+  create(state) { return buildTableDecorationsFromState(state) },
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildTableDecorationsFromState(tr.state)
     return deco
   },
   provide: f => EditorView.decorations.from(f),
@@ -538,6 +731,15 @@ function parseInline(text, offset) {
         }
       }
     }
+    // Wiki link  [[Note Name]]
+    if (ch === '[' && text[i+1] === '[') {
+      const end = text.indexOf(']]', i + 2)
+      if (end !== -1) {
+        push(results, offset + i, offset + end + 2, 'wiki:' + text.slice(i + 2, end))
+        i = end + 2; continue
+      }
+    }
+
     // Image  ![alt](url)  — show placeholder icon
     if (ch === '!' && text[i+1] === '[') {
       const cb = text.indexOf(']', i + 2)
@@ -654,6 +856,13 @@ function buildDecorations(view) {
       for (let n = block.start + 1; n < block.end; n++) inFenceContent.add(n)
     }
 
+    // ── Entry-block state: tracks h3 entries nested inside h2 sections
+    // Used to apply alternating shaded backgrounds so each shortcut-added
+    // entry is visually distinct from its neighbours.
+    let inH2Section  = false
+    let entryCount   = 0         // how many h3 entries we've seen in this h2
+    let entryClass   = null      // 'cm-md-entry-a' | 'cm-md-entry-b' | null
+
     // Build decorations line by line
     for (let n = 1; n <= state.doc.lines; n++) {
       const line   = state.doc.line(n)
@@ -674,7 +883,8 @@ function buildDecorations(view) {
         }
 
         if (!active) {
-          builder.add(from, from, Decoration.line({ class: 'cm-md-fence-marker' }))
+          const cls = 'cm-md-fence-marker' + (entryClass ? ` ${entryClass}` : '')
+          builder.add(from, from, Decoration.line({ class: cls }))
         }
         continue
       }
@@ -682,7 +892,8 @@ function buildDecorations(view) {
       // ── Code fence body
       if (inFenceContent.has(n)) {
         if (!active) {
-          builder.add(from, from, Decoration.line({ class: 'cm-md-fence-body' }))
+          const cls = 'cm-md-fence-body' + (entryClass ? ` ${entryClass}` : '')
+          builder.add(from, from, Decoration.line({ class: cls }))
         }
         continue
       }
@@ -700,10 +911,33 @@ function buildDecorations(view) {
       if (hm) {
         const level  = hm[1].length
         const prefix = level + 1           // '## '.length
-        builder.add(from, from, Decoration.line({ class: `cm-md-h${level}` }))
+
+        // Update entry-block tracking
+        if (level === 1) {
+          inH2Section = false; entryCount = 0; entryClass = null
+        } else if (level === 2) {
+          inH2Section = true; entryCount = 0; entryClass = null
+        } else if (level === 3 && inH2Section) {
+          entryCount++
+          entryClass = entryCount % 2 === 1 ? 'cm-md-entry-a' : 'cm-md-entry-b'
+        }
+
+        // Build line class — h3 entries get the block colour + optional separator
+        let lineClass = `cm-md-h${level}`
+        if (level === 3 && inH2Section && entryClass) {
+          lineClass += ` ${entryClass}`
+          if (entryCount > 1) lineClass += ' cm-md-entry-sep'
+        }
+
+        builder.add(from, from, Decoration.line({ class: lineClass }))
         builder.add(from, from + prefix, Decoration.replace({}))  // hide '## '
         addInline(builder, text.slice(prefix), from + prefix)
         continue
+      }
+
+      // ── Apply entry block background to all body lines within an h3 entry
+      if (entryClass) {
+        builder.add(from, from, Decoration.line({ class: entryClass }))
       }
 
       // ── Blockquote  > …
@@ -721,7 +955,8 @@ function buildDecorations(view) {
         const checked  = tm[2].includes('[x]')
         const indent   = tm[1].length
         const markEnd  = from + indent + tm[2].length
-        builder.add(from + indent, markEnd, Decoration.replace({ widget: new CheckboxWidget(checked) }))
+        // Pass `from + indent` so the widget can find [ ] / [x] in the doc
+        builder.add(from + indent, markEnd, Decoration.replace({ widget: new CheckboxWidget(checked, from + indent) }))
         addInline(builder, text.slice(indent + tm[2].length), markEnd)
         continue
       }
@@ -758,8 +993,13 @@ function buildDecorations(view) {
 function addInline(builder, text, offset) {
   const decs = parseInline(text, offset)
   for (const { from, to, type } of decs) {
-    const mark = markForType(type)
-    if (mark) builder.add(from, to, mark)
+    if (type.startsWith('wiki:')) {
+      const noteName = type.slice(5)
+      builder.add(from, to, Decoration.replace({ widget: new WikiLinkWidget(noteName) }))
+    } else {
+      const mark = markForType(type)
+      if (mark) builder.add(from, to, mark)
+    }
   }
 }
 
@@ -784,6 +1024,7 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
 export const livePreviewPlugin = [
   frontmatterBlockField,
   mermaidBlockField,
+  tableBlockField,
   mermaidScrollListener,
   ViewPlugin.fromClass(
     class {

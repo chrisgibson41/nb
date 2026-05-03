@@ -63,6 +63,7 @@ function ContextMenu({ x, y, tab, onPin, onClose, onCloseOthers, onCloseAll, onC
       }}
     >
       {item(tab.pinned ? 'Unpin tab' : 'Pin tab', () => onPin(tab.path))}
+      {tab.preview && item('Keep tab open', () => onPin(tab.path))}
       {divider}
       {item('Close tab', () => onClose(tab.path), tab.pinned)}
       {item('Close other tabs', onCloseOthers)}
@@ -111,8 +112,9 @@ export default function TabBar({ tabs, activeTab, unsavedPaths, onSwitch, onClos
           return (
             <div
               key={tab.path}
-              title={tab.path}
+              title={tab.preview ? `${tab.path} (preview — edit or pin to keep)` : tab.path}
               onMouseDown={e => { if (e.button === 0) onSwitch(tab.path) }}
+              onDoubleClick={() => { if (tab.preview) onPin(tab.path) }}
               onAuxClick={e => handleMiddleClick(e, tab)}
               onContextMenu={e => handleContextMenu(e, tab)}
               style={{
@@ -125,7 +127,7 @@ export default function TabBar({ tabs, activeTab, unsavedPaths, onSwitch, onClos
                 userSelect: 'none',
                 flexShrink: 0,
                 maxWidth: '180px',
-                minWidth: tab.pinned ? '40px' : '80px',
+                minWidth: '80px',
                 borderRight: '1px solid #2e2e2e',
                 background: active ? '#252526' : 'transparent',
                 borderTop: active ? '1px solid #007acc' : '1px solid transparent',
@@ -140,7 +142,7 @@ export default function TabBar({ tabs, activeTab, unsavedPaths, onSwitch, onClos
             >
               {/* Pin indicator */}
               {tab.pinned && (
-                <span style={{ fontSize: '10px', opacity: 0.7, flexShrink: 0 }} title="Pinned">📌</span>
+                <span style={{ fontSize: '9px', opacity: 0.5, flexShrink: 0 }} title="Pinned">📌</span>
               )}
 
               {/* Unsaved dot */}
@@ -154,17 +156,17 @@ export default function TabBar({ tabs, activeTab, unsavedPaths, onSwitch, onClos
                 }} title="Unsaved changes" />
               )}
 
-              {/* Filename — hidden when pinned to save space */}
-              {!tab.pinned && (
-                <span style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  flex: 1,
-                  minWidth: 0,
-                }}>
-                  {name}
-                </span>
-              )}
+              {/* Filename — always shown */}
+              <span style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flex: 1,
+                minWidth: 0,
+                fontStyle: tab.preview ? 'italic' : 'normal',
+                opacity: tab.preview ? 0.75 : 1,
+              }}>
+                {name}
+              </span>
 
               {/* Close button — only on non-pinned tabs */}
               {!tab.pinned && (

@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback, useReducer } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useReducer, createContext, useContext } from 'react';
+import ReactDOM from 'react-dom';
 
 const API = 'http://localhost:3001';
+const NOTES_DIR_FALLBACK = 'notes';
 
 const styles = {
   container: {
@@ -65,13 +67,15 @@ const styles = {
     overflowY: 'auto',
     padding: '4px 0',
   },
-  item: (depth, active, isHovered) => ({
+  item: (depth, active, isHovered, isDragOver) => ({
     display: 'flex',
     alignItems: 'center',
     padding: `3px 8px 3px ${12 + depth * 14}px`,
     cursor: 'pointer',
     color: active ? '#ffffff' : '#cccccc',
-    background: active ? '#37373d' : isHovered ? '#2a2d2e' : 'transparent',
+    background: isDragOver ? '#1c3a5c' : active ? '#37373d' : isHovered ? '#2a2d2e' : 'transparent',
+    outline: isDragOver ? '1px dashed #007acc' : 'none',
+    outlineOffset: '-1px',
     userSelect: 'none',
     position: 'relative',
     minHeight: '24px',
@@ -193,17 +197,141 @@ function FileIcon() {
   );
 }
 
+// ── Prompt context (replaces window.prompt which is disabled in Electron) ────
+
+const PromptContext = createContext(null);
+
+function InputModal({ message, defaultValue = '', onSubmit, onCancel }) {
+  const [value, setValue] = useState(defaultValue);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const submit = () => { const v = value.trim(); if (v) onSubmit(v); else onCancel(); };
+
+  return ReactDOM.createPortal(
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+      zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}
+    onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div style={{
+        background: '#1e1e1e', border: '1px solid #444', borderRadius: 10,
+        padding: 24, width: 340, boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
+        fontFamily: 'Inter, -apple-system, sans-serif',
+        display: 'flex', flexDirection: 'column', gap: 16,
+      }}>
+        <p style={{ margin: 0, fontSize: 13, color: '#ccc' }}>{message}</p>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+          style={{
+            background: '#2d2d2d', border: '1px solid #555', borderRadius: 6,
+            color: '#ccc', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box',
+          }}
+          onFocus={e => e.target.style.borderColor = '#007acc'}
+          onBlur={e => e.target.style.borderColor = '#555'}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onCancel} style={{
+            padding: '6px 14px', borderRadius: 6, background: 'transparent',
+            border: '1px solid #444', color: '#999', fontSize: 12, cursor: 'pointer',
+          }}>Cancel</button>
+          <button onClick={submit} style={{
+            padding: '6px 14px', borderRadius: 6, background: '#007acc',
+            border: 'none', color: '#fff', fontSize: 12, cursor: 'pointer', fontWeight: 600,
+          }}>OK</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Tree node ─────────────────────────────────────────────────────────────────
+
 function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQuery }) {
   const [open, setOpen] = useState(depth < 1);
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.name);
   const [contextMenu, setContextMenu] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const renameRef = useRef(null);
+  const dragCounterRef = useRef(0);
   const isDir = node.type === 'dir';
   const isActive = currentFile === node.path;
 
-  // Filter logic
+  // ── Drag and drop ──────────────────────────────────────────────────────────
+  const handleDragStart = (e) => {
+    e.dataTransfer.setData('text/plain', node.path);
+    e.dataTransfer.effectAllowed = 'move';
+    // Slight delay so the drag ghost renders before we visually alter the node
+    setTimeout(() => {}, 0);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (isDir) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDragOver(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+
+    const draggedPath = e.dataTransfer.getData('text/plain');
+    if (!draggedPath) return;
+
+    // Determine drop target directory
+    const targetDir = isDir ? node.path : node.path.substring(0, node.path.lastIndexOf('/'));
+    const fileName = draggedPath.split('/').pop();
+    const newPath = `${targetDir}/${fileName}`;
+
+    // Guards: same location, dropping folder into itself or descendant
+    const oldDir = draggedPath.substring(0, draggedPath.lastIndexOf('/'));
+    if (oldDir === targetDir) return;                            // already there
+    if (newPath === draggedPath) return;                         // same path
+    if (targetDir === draggedPath || targetDir.startsWith(draggedPath + '/')) return; // into self
+
+    try {
+      await fetch(`${API}/api/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPath: draggedPath, newPath }),
+      });
+      onRefresh();
+      if (isDir) setOpen(true);
+    } catch (err) {
+      console.error('Drop move failed:', err);
+    }
+  };
+
+  // ── All hooks must come before any early return (Rules of Hooks) ────────────
+  const showPrompt = useContext(PromptContext);
+
+  // Filter logic — defined before any conditional returns so hook order is stable
   const matchesFilter = useCallback((n, q) => {
     if (!q) return true;
     const lower = q.toLowerCase();
@@ -212,7 +340,7 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
     return false;
   }, []);
 
-  if (!matchesFilter(node, filterQuery)) return null;
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   useEffect(() => {
     if (filterQuery) setOpen(true);
@@ -224,6 +352,15 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
       renameRef.current.select();
     }
   }, [renaming]);
+
+  useEffect(() => {
+    if (contextMenu) {
+      window.addEventListener('click', closeContextMenu);
+      return () => window.removeEventListener('click', closeContextMenu);
+    }
+  }, [contextMenu, closeContextMenu]);
+
+  if (!matchesFilter(node, filterQuery)) return null;
 
   const handleRename = async () => {
     const newName = renameValue.trim();
@@ -258,7 +395,7 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
 
   const handleNewFile = async () => {
     const basePath = isDir ? node.path : node.path.substring(0, node.path.lastIndexOf('/'));
-    const name = prompt('New file name:', 'untitled.md');
+    const name = await showPrompt('New file name:', 'untitled.md');
     if (!name) return;
     const filePath = `${basePath}/${name.endsWith('.md') ? name : name + '.md'}`;
     try {
@@ -277,7 +414,7 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
 
   const handleNewFolder = async () => {
     const basePath = isDir ? node.path : node.path.substring(0, node.path.lastIndexOf('/'));
-    const name = prompt('New folder name:');
+    const name = await showPrompt('New folder name:');
     if (!name) return;
     const dirPath = `${basePath}/${name}`;
     try {
@@ -293,22 +430,19 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
     }
   };
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
-
-  useEffect(() => {
-    if (contextMenu) {
-      window.addEventListener('click', closeContextMenu);
-      return () => window.removeEventListener('click', closeContextMenu);
-    }
-  }, [contextMenu, closeContextMenu]);
-
   const ext = !isDir && node.name.includes('.') ? '.' + node.name.split('.').pop() : '';
   const nameWithoutExt = !isDir && ext ? node.name.slice(0, -ext.length) : node.name;
 
   return (
     <div>
       <div
-        style={styles.item(depth, isActive, hovered)}
+        style={styles.item(depth, isActive, hovered, isDragOver)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={() => {
@@ -482,7 +616,7 @@ function TemplatesSection({ onFileSelect, currentFile, refreshTick }) {
   useEffect(() => {
     fetch(`${API}/api/templates`)
       .then(r => r.json())
-      .then(setTemplates)
+      .then(data => setTemplates(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [refreshTick]);
 
@@ -541,6 +675,11 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
   const [tree, setTree] = useState(null);
   const [localFilter, setLocalFilter] = useState('');
   const [loading, setLoading] = useState(false);
+  const [promptState, setPromptState] = useState(null);
+
+  const showPrompt = useCallback((message, defaultValue = '') => {
+    return new Promise(resolve => setPromptState({ message, defaultValue, resolve }));
+  }, []);
 
   const loadTree = useCallback(async () => {
     setLoading(true);
@@ -560,10 +699,13 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
 
   const effectiveFilter = searchQuery || localFilter;
 
+  const rootPath = tree?.path || NOTES_DIR_FALLBACK;
+
   const handleNewFile = async () => {
-    const name = prompt('New file name:', 'untitled.md');
+    const name = await showPrompt('New file name:', 'untitled.md');
     if (!name) return;
-    const filePath = `notes/${name.endsWith('.md') ? name : name + '.md'}`;
+    const fname = name.endsWith('.md') ? name : name + '.md';
+    const filePath = `${rootPath}/${fname}`;
     try {
       await fetch(`${API}/api/file`, {
         method: 'PUT',
@@ -577,19 +719,70 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
     }
   };
 
+  const handleNewFolder = async () => {
+    const name = await showPrompt('New folder name:');
+    if (!name) return;
+    const dirPath = `${rootPath}/${name}`;
+    try {
+      await fetch(`${API}/api/mkdir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: dirPath }),
+      });
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleNewCanvas = async () => {
+    const name = await showPrompt('Canvas name:', 'untitled');
+    if (!name) return;
+    const fname = name.endsWith('.canvas') ? name : name + '.canvas';
+    const filePath = `${rootPath}/${fname}`;
+    try {
+      const res = await fetch(`${API}/api/file`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath, content: '{"nodes":[],"edges":[]}' }),
+      });
+      if (!res.ok) throw new Error('Failed to create canvas');
+      // Await the tree reload directly so the new file is visible in the sidebar
+      // before we open it — using the prop-chain (onRefresh) schedules the reload
+      // as a side-effect and can race with the file opening.
+      await loadTree();
+      onFileSelect(filePath);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePromptSubmit = (value) => {
+    if (promptState) { promptState.resolve(value); setPromptState(null); }
+  };
+  const handlePromptCancel = () => {
+    if (promptState) { promptState.resolve(null); setPromptState(null); }
+  };
+
   return (
+    <PromptContext.Provider value={showPrompt}>
+    {promptState && (
+      <InputModal
+        message={promptState.message}
+        defaultValue={promptState.defaultValue}
+        onSubmit={handlePromptSubmit}
+        onCancel={handlePromptCancel}
+      />
+    )}
     <div style={styles.container}>
       <div style={styles.header}>
         <div style={styles.headerRow}>
           <span style={styles.sectionTitle}>Explorer</span>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              style={styles.iconBtn}
-              title="New file"
-              onClick={handleNewFile}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
-            >
+            {/* New file */}
+            <button style={styles.iconBtn} title="New note" onClick={handleNewFile}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
@@ -597,26 +790,40 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
                 <line x1="9" y1="16" x2="15" y2="16"/>
               </svg>
             </button>
-            <button
-              style={styles.iconBtn}
-              title="New from template (Ctrl+T)"
-              onClick={onNewTemplate}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
-            >
+            {/* New folder */}
+            <button style={styles.iconBtn} title="New folder" onClick={handleNewFolder}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                <line x1="12" y1="11" x2="12" y2="17"/>
+                <line x1="9" y1="14" x2="15" y2="14"/>
+              </svg>
+            </button>
+            {/* New canvas */}
+            <button style={styles.iconBtn} title="New canvas" onClick={handleNewCanvas}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </button>
+            {/* New from template */}
+            <button style={styles.iconBtn} title="New from template (Ctrl+T)" onClick={onNewTemplate}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                 <line x1="12" y1="8" x2="12" y2="16"/>
                 <line x1="8" y1="12" x2="16" y2="12"/>
               </svg>
             </button>
-            <button
-              style={styles.iconBtn}
-              title="Refresh"
-              onClick={onRefresh}
-              onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
-            >
+            {/* Refresh */}
+            <button style={styles.iconBtn} title="Refresh" onClick={onRefresh}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="23 4 23 10 17 10"/>
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -637,7 +844,7 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
               onChange={(e) => setLocalFilter(e.target.value)}
             />
             {localFilter && (
-              <button onClick={() => setLocalFilter('')} style={{ color: '#777', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
+              <button onClick={() => setLocalFilter('')} title="Clear filter" style={{ color: '#777', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
             )}
           </div>
         )}
@@ -673,5 +880,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
         refreshTick={refreshKey}
       />
     </div>
+    </PromptContext.Provider>
   );
 }

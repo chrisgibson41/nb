@@ -203,6 +203,7 @@ export default function TagBar({ content, setContent }) {
         <button
           style={styles.addBtn}
           onClick={() => setAdding(true)}
+          title="Add tag"
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#666'; e.currentTarget.style.color = '#999'; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#666'; }}
         >

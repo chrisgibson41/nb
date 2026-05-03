@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background: deep dark rounded square -->
+  <rect width="1024" height="1024" rx="230" fill="#1a1a2e"/>
+
+  <!-- Subtle gradient overlay -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4fc3f7"/>
+      <stop offset="100%" stop-color="#0288d1"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+
+  <!-- Page shadow -->
+  <rect x="268" y="188" width="488" height="648" rx="32" fill="rgba(0,0,0,0.35)"/>
+
+  <!-- Page body -->
+  <rect x="256" y="176" width="488" height="648" rx="32" fill="#f0f4f8"/>
+
+  <!-- Folded corner -->
+  <path d="M624 176 L744 296 L624 296 Z" fill="#c8d6e5"/>
+  <path d="M624 176 L744 296 L624 296 Z" fill="none" stroke="#b0c0d0" stroke-width="2"/>
+
+  <!-- Blue accent bar at top of page -->
+  <rect x="256" y="176" width="368" height="8" rx="4" fill="url(#accent)"/>
+
+  <!-- Text lines -->
+  <rect x="308" y="340" width="300" height="22" rx="8" fill="#334155"/>
+  <rect x="308" y="386" width="260" height="16" rx="6" fill="#94a3b8"/>
+  <rect x="308" y="416" width="200" height="16" rx="6" fill="#94a3b8"/>
+
+  <!-- Divider -->
+  <rect x="308" y="460" width="360" height="2" rx="1" fill="#e2e8f0"/>
+
+  <!-- Second block of lines -->
+  <rect x="308" y="488" width="280" height="16" rx="6" fill="#94a3b8"/>
+  <rect x="308" y="518" width="320" height="16" rx="6" fill="#94a3b8"/>
+  <rect x="308" y="548" width="180" height="16" rx="6" fill="#94a3b8"/>
+
+  <!-- Third block -->
+  <rect x="308" y="608" width="260" height="16" rx="6" fill="#cbd5e1"/>
+  <rect x="308" y="638" width="300" height="16" rx="6" fill="#cbd5e1"/>
+
+  <!-- Blue dot accent (bullet) -->
+  <circle cx="288" cy="490" r="6" fill="url(#accent)"/>
+  <circle cx="288" cy="520" r="6" fill="url(#accent)"/>
+  <circle cx="288" cy="550" r="6" fill="url(#accent)"/>
+</svg>

@@ -11,6 +11,8 @@ import SettingsModal from './components/SettingsModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
 import TabBar from './components/TabBar.jsx';
+import Canvas from './components/Canvas.jsx';
+import GettingStarted from './components/GettingStarted.jsx';
 
 const API = 'http://localhost:3001';
 
@@ -21,12 +23,18 @@ export default function App() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showGettingStarted, setShowGettingStarted] = useState(() => {
+    return !localStorage.getItem('nb:dismissedGettingStarted');
+  });
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  // Tabs — [{ path, pinned }]; unsaved tracked by comparing content vs savedContent per path
-  // Initialise from localStorage so tabs survive a reload
+  // Tabs — [{ path, pinned, preview }]
+  // On restore, only bring back pinned tabs; the active file re-opens as the working tab.
   const [tabs, setTabs] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('nb:tabs') || '[]'); } catch { return []; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('nb:tabs') || '[]');
+      return saved.filter(t => t.pinned);
+    } catch { return []; }
   });
   const [unsavedPaths, setUnsavedPaths] = useState(new Set());
   const [templates, setTemplates] = useState([]);
@@ -38,7 +46,7 @@ export default function App() {
   useEffect(() => {
     fetch(`${API}/api/templates`)
       .then(r => r.json())
-      .then(setTemplates)
+      .then(data => setTemplates(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -72,7 +80,9 @@ export default function App() {
     // effect on the same render cycle gets a chance to read it.
   }, [currentFile]);
 
-  // Load file from server and open/switch to its tab
+  // Load file from server and open/switch to its tab.
+  // Opening always reuses the single preview tab unless the file already has
+  // a permanent (non-preview) tab open.
   const openFile = useCallback(async (filePath) => {
     try {
       const res = await fetch(`${API}/api/file?path=${encodeURIComponent(filePath)}`);
@@ -82,11 +92,29 @@ export default function App() {
       setContent(text);
       setSavedContent(text);
       setUnsavedPaths(prev => { const n = new Set(prev); n.delete(filePath); return n; });
-      setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, { path: filePath, pinned: false }]);
+      setTabs(prev => {
+        const existing = prev.find(t => t.path === filePath);
+        // Already open (pinned or current working tab) — just switch, no list change
+        if (existing) return prev;
+        // Keep all pinned tabs; replace the single working (non-pinned) tab
+        const pinned = prev.filter(t => t.pinned);
+        return [...pinned, { path: filePath, pinned: false, preview: true }];
+      });
     } catch (err) {
       console.error('Error opening file:', err);
     }
   }, []);
+
+  // Resolve [[Wiki Link]] note names to file paths via the server
+  const handleWikiLink = useCallback(async (noteName) => {
+    try {
+      const res = await fetch(`${API}/api/resolve?name=${encodeURIComponent(noteName)}`);
+      if (res.ok) {
+        const { path } = await res.json();
+        openFile(path);
+      }
+    } catch { /* ignore */ }
+  }, [openFile]);
 
   // On first load, reopen the last active file (tabs are already restored via useState init)
   useEffect(() => {
@@ -119,9 +147,11 @@ export default function App() {
     setUnsavedPaths(prev => { const n = new Set(prev); n.delete(filePath); return n; });
   }, [currentFile, openFile]);
 
-  // Pin / unpin a tab
+  // Pin / unpin a tab — pinning also promotes a preview tab to permanent
   const togglePin = useCallback((filePath) => {
-    setTabs(prev => prev.map(t => t.path === filePath ? { ...t, pinned: !t.pinned } : t));
+    setTabs(prev => prev.map(t =>
+      t.path === filePath ? { ...t, pinned: !t.pinned, preview: false } : t
+    ));
   }, []);
 
   // Close all tabs except the given one
@@ -168,6 +198,7 @@ export default function App() {
   const handleContentChange = useCallback((newContent) => {
     setContent(newContent);
     setUnsavedPaths(prev => { const n = new Set(prev); n.add(currentFile); return n; });
+    // Note: editing does NOT promote the working tab — only pinning does.
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveFile(currentFile, newContent);
@@ -204,7 +235,13 @@ export default function App() {
     setSavedContent(fileContent);
     setShowTemplateModal(false);
     setTreeRefreshKey((k) => k + 1);
-    setTabs(prev => prev.some(t => t.path === filePath) ? prev : [...prev, { path: filePath, pinned: false }]);
+    // New files open as the working tab (replaces any existing working tab)
+    setTabs(prev => {
+      const existing = prev.find(t => t.path === filePath);
+      if (existing) return prev;
+      const pinned = prev.filter(t => t.pinned);
+      return [...pinned, { path: filePath, pinned: false, preview: true }];
+    });
   }, []);
 
   return (
@@ -244,15 +281,26 @@ export default function App() {
         </div>
 
         <div className="main-area">
-          {/* ShortcutsPanel lives outside the conditional so it never unmounts */}
-          <ShortcutsPanel
-            content={content}
-            setContent={handleContentChange}
-            filePath={currentFile}
-            onScrollTo={text => editorRef.current?.scrollToText(text)}
-            templates={templates}
-          />
+          {/* ShortcutsPanel only for markdown files */}
+          {currentFile && !currentFile.endsWith('.canvas') && (
+            <ShortcutsPanel
+              content={content}
+              setContent={handleContentChange}
+              filePath={currentFile}
+              onScrollTo={text => editorRef.current?.scrollToText(text)}
+              templates={templates}
+            />
+          )}
           {currentFile ? (
+            currentFile.endsWith('.canvas') ? (
+              // ── Canvas view ──────────────────────────────────────────────
+              <Canvas
+                content={content}
+                onChange={handleContentChange}
+                filePath={currentFile}
+                onOpenNote={openFile}
+              />
+            ) : (
             <div className="editor-area">
               <div className="editor-with-outline">
                 <EditorPane
@@ -260,6 +308,7 @@ export default function App() {
                   content={content}
                   onChange={handleContentChange}
                   filePath={currentFile}
+                  onWikiLink={handleWikiLink}
                 />
                 <OutlinePanel
                   content={content}
@@ -268,6 +317,12 @@ export default function App() {
               </div>
               <TagBar content={content} setContent={handleContentChange} />
             </div>
+            ) /* end editor branch */
+          ) : showGettingStarted ? (
+            <GettingStarted onClose={() => {
+              setShowGettingStarted(false);
+              localStorage.setItem('nb:dismissedGettingStarted', '1');
+            }} />
           ) : (
             <div className="no-file-open">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#cccccc" strokeWidth="1.5">
@@ -279,6 +334,19 @@ export default function App() {
               </svg>
               <p>Select a file to start editing</p>
               <p style={{ fontSize: '12px', color: '#555' }}>or press Ctrl+T to create from a template</p>
+              <button
+                onClick={() => setShowGettingStarted(true)}
+                title="Open Getting Started guide"
+                style={{
+                  marginTop: '8px', padding: '6px 14px', borderRadius: '6px',
+                  background: 'transparent', border: '1px solid #3c3c3c',
+                  color: '#666', fontSize: '12px', cursor: 'pointer',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#555'; e.currentTarget.style.color = '#999'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#3c3c3c'; e.currentTarget.style.color = '#666'; }}
+              >
+                Getting Started guide
+              </button>
             </div>
           )}
         </div>

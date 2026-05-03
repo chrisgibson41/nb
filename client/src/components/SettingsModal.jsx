@@ -212,11 +212,11 @@ _shortcuts:
         )}
 
         <div style={S.row}>
-          <button style={S.cancelBtn} onClick={onClose}
+          <button style={S.cancelBtn} onClick={onClose} title="Discard changes and close"
             onMouseEnter={e => e.currentTarget.style.borderColor = '#666'}
             onMouseLeave={e => e.currentTarget.style.borderColor = '#444'}
           >Cancel</button>
-          <button style={S.saveBtn(saved)} onClick={handleSave} disabled={saving}>
+          <button style={S.saveBtn(saved)} onClick={handleSave} disabled={saving} title="Save settings">
             {saved ? 'Saved!' : saving ? 'Saving…' : 'Save'}
           </button>
         </div>

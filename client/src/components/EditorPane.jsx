@@ -53,6 +53,8 @@ function createEditorState(doc, onChange) {
       livePreviewPlugin,
       EditorView.lineWrapping,
       highlightActiveLine(),
+      // Enable native OS spellcheck on the contenteditable div
+      EditorView.contentAttributes.of({ spellcheck: 'true' }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) onChange(update.state.doc.toString())
       }),
@@ -60,12 +62,23 @@ function createEditorState(doc, onChange) {
   })
 }
 
-const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath }, ref) {
-  const containerRef = useRef(null)
-  const viewRef      = useRef(null)
-  const onChangeRef  = useRef(onChange)
+const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath, onWikiLink }, ref) {
+  const containerRef  = useRef(null)
+  const viewRef       = useRef(null)
+  const onChangeRef   = useRef(onChange)
+  const onWikiLinkRef = useRef(onWikiLink)
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
+  useEffect(() => { onWikiLinkRef.current = onWikiLink }, [onWikiLink])
+
+  // Listen for wiki-link click events dispatched by WikiLinkWidget
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e) => onWikiLinkRef.current?.(e.detail.noteName)
+    el.addEventListener('nb:wiki-link', handler)
+    return () => el.removeEventListener('nb:wiki-link', handler)
+  }, [])
 
   // Expose scrollToText to parent via ref
   useImperativeHandle(ref, () => ({

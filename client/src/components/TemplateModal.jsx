@@ -257,6 +257,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
           <button
             style={styles.closeBtn}
             onClick={onClose}
+            title="Close"
             onMouseEnter={(e) => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
           >
@@ -344,6 +345,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   style={{ ...styles.btn(false), fontSize: '12px', padding: '5px 12px' }}
+                  title="Open the existing note at this path"
                   onClick={async () => {
                     try {
                       const r = await fetch(`${api}/api/file?path=${encodeURIComponent(existingPath)}`);
@@ -358,6 +360,7 @@ export default function TemplateModal({ onClose, onCreated, api }) {
                 </button>
                 <button
                   style={{ ...styles.btn(false), fontSize: '12px', padding: '5px 12px', color: '#f44747', borderColor: 'rgba(244,71,71,0.4)' }}
+                  title="Overwrite the existing note with the new template"
                   onClick={() => handleCreate(true)}
                   onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(244,71,71,0.1)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = '#3a3a3a'; }}

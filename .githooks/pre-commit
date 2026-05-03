@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Pre-commit hook — run unit tests before allowing a commit.
+# Install once via:  git config core.hooksPath .githooks
+
+set -e
+
+echo "▸ Running unit tests…"
+cd "$(git rev-parse --show-toplevel)/client"
+npm run test:run
+
+echo "✓ All tests passed."

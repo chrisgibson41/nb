@@ -84,8 +84,13 @@ function stripFrontmatterKey(raw, key) {
 
 // Mutable — updated live when config is changed via the settings UI
 let cfg = loadConfig();
-let NOTES_DIR = path.resolve(expandHome(cfg.notesDir));
-let TEMPLATES_DIR = path.resolve(expandHome(cfg.templatesDir));
+// Env-var overrides allow the test runner to point at an isolated directory
+let NOTES_DIR = process.env.NB_NOTES_DIR
+  ? path.resolve(process.env.NB_NOTES_DIR)
+  : path.resolve(expandHome(cfg.notesDir));
+let TEMPLATES_DIR = process.env.NB_TEMPLATES_DIR
+  ? path.resolve(process.env.NB_TEMPLATES_DIR)
+  : path.resolve(expandHome(cfg.templatesDir));
 
 function ensureDirs() {
   if (!fs.existsSync(NOTES_DIR)) fs.mkdirSync(NOTES_DIR, { recursive: true });
@@ -194,8 +199,8 @@ function buildTree(dirPath, skipPaths) {
     } catch { children = []; }
     return { name, path: dirPath, type: 'dir', children };
   }
-  // Only show markdown files
-  if (!name.endsWith('.md')) return null;
+  // Only show markdown and canvas files
+  if (!name.endsWith('.md') && !name.endsWith('.canvas')) return null;
   return { name, path: dirPath, type: 'file' };
 }
 
@@ -237,6 +242,36 @@ app.put('/api/config', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/resolve?name=NoteName — find a note file by name (for wiki links)
+app.get('/api/resolve', (req, res) => {
+  const { name } = req.query;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  function search(dir) {
+    try {
+      for (const entry of fs.readdirSync(dir)) {
+        const full = path.join(dir, entry);
+        try {
+          const stat = fs.statSync(full);
+          if (stat.isDirectory()) {
+            const found = search(full);
+            if (found) return found;
+          } else if (
+            entry === name ||
+            entry === name + '.md' ||
+            entry.replace(/\.md$/, '') === name
+          ) {
+            return full;
+          }
+        } catch { continue; }
+      }
+    } catch { }
+    return null;
+  }
+  const found = search(NOTES_DIR);
+  if (found) res.json({ path: found });
+  else res.status(404).json({ error: 'Note not found' });
 });
 
 // GET /api/tree

@@ -2,10 +2,16 @@
   "name": "obsidian-notes",
   "version": "0.1.0",
   "description": "Local markdown note-taking app",
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"node server.js\" \"cd client && npm run dev\"",
+    "dev": "concurrently -k \"cd client && npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "cd client && npm run build",
+    "start": "npm run build && electron .",
     "install:all": "npm install && cd client && npm install",
-    "start": "node server.js"
+    "prepare": "git config core.hooksPath .githooks || true",
+    "test:unit": "cd client && npm run test:run",
+    "test:e2e": "npx playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
     "chokidar": "^3.6.0",
@@ -16,6 +22,10 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@playwright/test": "^1.59.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "concurrently": "^8.2.2",
+    "electron": "^41.4.0",
+    "wait-on": "^9.0.5"
   }
 }

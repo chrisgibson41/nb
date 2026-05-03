@@ -128,7 +128,7 @@ export default function HistoryModal({ filePath, onClose, onRestore }) {
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           <span style={S.title}>History — {fileName}</span>
-          <button style={S.closeBtn} onClick={onClose}>×</button>
+          <button style={S.closeBtn} onClick={onClose} title="Close">×</button>
         </div>
 
         <div style={S.body}>
@@ -177,7 +177,8 @@ export default function HistoryModal({ filePath, onClose, onRestore }) {
           )}
           <button style={S.btn(false)} onClick={onClose}>Cancel</button>
           {selected && (
-            <button style={S.btn(true)} onClick={handleRestore} disabled={previewLoading}>
+            <button style={S.btn(true)} onClick={handleRestore} disabled={previewLoading}
+              title="Restore the file to this historical version">
               Restore this version
             </button>
           )}

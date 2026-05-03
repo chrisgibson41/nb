@@ -191,7 +191,97 @@
   font-family: sans-serif;
 }
 
-/* ── Mermaid diagram widget ──────────────────────────────────────────────── */
+/* ── Entry blocks (h3 entries nested under h2 sections) ─────────────────── */
+/* Each shortcut-added entry (### heading + body) gets a left accent bar and  */
+/* a subtle tinted background. Entries alternate between two tints so         */
+/* adjacent blocks are easy to tell apart.                                    */
+
+.cm-line.cm-md-entry-a {
+  background: rgba(0, 122, 204, 0.08) !important;
+  border-left: 3px solid rgba(0, 122, 204, 0.55) !important;
+  padding-left: 13px !important;
+  margin-left: -16px !important;
+}
+.cm-line.cm-md-entry-b {
+  background: rgba(255, 200, 80, 0.05) !important;
+  border-left: 3px solid rgba(255, 200, 80, 0.35) !important;
+  padding-left: 13px !important;
+  margin-left: -16px !important;
+}
+
+/* Separator line drawn on the heading of the 2nd+ entry */
+.cm-line.cm-md-entry-sep {
+  border-top: 1px solid #3c3c4e !important;
+  padding-top: 6px !important;
+  margin-top: 0 !important;
+}
+
+/* Tighten up the heading row so it sits closer to its body text */
+.cm-line.cm-md-h3.cm-md-entry-a,
+.cm-line.cm-md-h3.cm-md-entry-b {
+  padding-bottom: 1px !important;
+}
+
+/* ── Wiki links  [[Note Name]] ───────────────────────────────────────────── */
+.cm-md-wiki-link {
+  color: #4fc1ff;
+  background: rgba(79, 193, 255, 0.1);
+  border: 1px solid rgba(79, 193, 255, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.cm-md-wiki-link:hover {
+  background: rgba(79, 193, 255, 0.2);
+  border-color: rgba(79, 193, 255, 0.45);
+}
+
+/* ── Markdown tables ─────────────────────────────────────────────────────── */
+.cm-md-table-wrap {
+  margin: 8px 0;
+  overflow-x: auto;
+  cursor: text;
+}
+.cm-md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+.cm-md-table th {
+  background: #252530;
+  color: #c9d1d9;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 14px;
+  border: 1px solid #3a3a4a;
+  white-space: nowrap;
+}
+.cm-md-table td {
+  background: #1e1e26;
+  color: #aab0bb;
+  padding: 7px 14px;
+  border: 1px solid #2e2e3e;
+  vertical-align: top;
+}
+.cm-md-table tr:nth-child(even) td {
+  background: #222230;
+}
+.cm-md-table tr:hover td {
+  background: #262638;
+}
+.cm-md-table code {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.85em;
+  background: #2b2b3b;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Mermaid diagram widget ──────────────────────────────────────────────── */
 .cm-md-mermaid {
   display: block;
   margin: 8px 0;

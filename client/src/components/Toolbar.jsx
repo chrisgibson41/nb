@@ -7,29 +7,12 @@ const styles = {
     height: '40px',
     background: '#323233',
     borderBottom: '1px solid #3c3c3c',
-    padding: '0 12px',
+    // paddingLeft leaves room for macOS traffic-light buttons (~78px)
+    padding: '0 12px 0 80px',
     gap: '8px',
     flexShrink: 0,
     userSelect: 'none',
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontWeight: 600,
-    fontSize: '13px',
-    color: '#cccccc',
-    letterSpacing: '0.02em',
-    marginRight: '8px',
-  },
-  logoIcon: {
-    width: '18px',
-    height: '18px',
-    background: '#007acc',
-    borderRadius: '4px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    WebkitAppRegion: 'drag',  // make the toolbar draggable as a title bar
   },
   divider: {
     width: '1px',
@@ -99,28 +82,17 @@ const styles = {
 export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, onHistory, searchQuery, setSearchQuery, currentFile }) {
   const fileName = currentFile ? currentFile.split('/').pop() : null;
 
+  const noDrag = { WebkitAppRegion: 'no-drag' };
+
   return (
     <div style={styles.toolbar}>
-      <div style={styles.logo}>
-        <div style={styles.logoIcon}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" fill="white" />
-          </svg>
-        </div>
-        Notes
-      </div>
-
       {fileName && (
-        <>
-          <div style={styles.divider} />
-          <span style={styles.fileName}>{fileName}</span>
-        </>
+        <span style={{ ...styles.fileName, ...noDrag }}>{fileName}</span>
       )}
 
       <div style={styles.spacer} />
 
-      <div style={styles.searchBox}>
+      <div style={{ ...styles.searchBox, ...noDrag }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -134,6 +106,7 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
+            title="Clear search"
             style={{ color: '#888', padding: 0, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }}
           >×</button>
         )}
@@ -141,7 +114,7 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
 
       {currentFile && (
         <button
-          style={styles.btn}
+          style={{ ...styles.btn, ...noDrag }}
           onClick={onHistory}
           title="File history"
           onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; e.currentTarget.style.borderColor = '#555'; }}
@@ -155,7 +128,7 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
       )}
 
       <button
-        style={styles.btn}
+        style={{ ...styles.btn, ...noDrag }}
         onClick={onNewTemplate}
         title="New note from template (Ctrl+T)"
         onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; e.currentTarget.style.borderColor = '#555'; }}
@@ -168,13 +141,13 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
         New
       </button>
 
-      <div style={styles.saveIndicator(isUnsaved)}>
+      <div style={{ ...styles.saveIndicator(isUnsaved), ...noDrag }}>
         <div style={styles.dot(isUnsaved)} />
         {isUnsaved ? 'Unsaved' : 'Saved'}
       </div>
 
       <button
-        style={{ ...styles.btn, padding: '4px 8px', borderColor: 'transparent' }}
+        style={{ ...styles.btn, ...noDrag, padding: '4px 8px', borderColor: 'transparent' }}
         onClick={onSettings}
         title="Settings"
         onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; e.currentTarget.style.borderColor = '#555'; }}
