@@ -1,6 +1,6 @@
 {
   "notesDir": "~/notes",
-  "templatesDir": "~/notes/templates",
+  "templatesDir": "./templates",
 
   "templatePaths": {
     "daily-note": "Daily/{{date}}.md",
