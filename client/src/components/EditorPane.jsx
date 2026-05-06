@@ -69,13 +69,19 @@ function createEditorState(doc, onChange, onMermaidChange) {
   })
 }
 
+const PREVIEW_MIN = 200
+const PREVIEW_MAX = 900
+const PREVIEW_DEFAULT = 400
+
 const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath, onWikiLink }, ref) {
   const containerRef      = useRef(null)
   const viewRef           = useRef(null)
   const onChangeRef       = useRef(onChange)
   const onWikiLinkRef     = useRef(onWikiLink)
   const [activeMermaid, setActiveMermaid] = useState(null)
+  const [previewWidth, setPreviewWidth]   = useState(PREVIEW_DEFAULT)
   const setMermaidRef     = useRef(setActiveMermaid)
+  const dragRef           = useRef(null)  // { startX, startWidth } during resize
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onWikiLinkRef.current = onWikiLink }, [onWikiLink])
@@ -146,10 +152,54 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
     }
   }, [content]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Preview resize drag handlers ───────────────────────────────────────────
+  const onResizeMouseDown = (e) => {
+    e.preventDefault()
+    dragRef.current = { startX: e.clientX, startWidth: previewWidth }
+
+    const onMouseMove = (ev) => {
+      const delta = dragRef.current.startX - ev.clientX  // dragging left grows the panel
+      const next = Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, dragRef.current.startWidth + delta))
+      setPreviewWidth(next)
+    }
+
+    const onMouseUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor    = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       <div ref={containerRef} className="cm-host" style={{ flex: 1, minWidth: 0 }} />
-      {activeMermaid !== null && <MermaidPreview code={activeMermaid} />}
+      {activeMermaid !== null && (
+        <>
+          {/* Drag handle */}
+          <div
+            onMouseDown={onResizeMouseDown}
+            style={{
+              width: '5px',
+              flexShrink: 0,
+              cursor: 'col-resize',
+              background: 'transparent',
+              borderLeft: '1px solid #2e2e2e',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            title="Drag to resize preview"
+          />
+          <MermaidPreview code={activeMermaid} width={previewWidth} />
+        </>
+      )}
     </div>
   )
 })

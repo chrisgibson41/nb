@@ -27,14 +27,11 @@ let seq = 0
 
 const s = {
   panel: {
-    width: '400px',
-    minWidth: '300px',
-    flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',
-    borderLeft: '1px solid #2e2e2e',
     background: '#1a1a1a',
     overflow: 'hidden',
+    flexShrink: 0,
   },
   header: {
     display: 'flex',
@@ -89,7 +86,7 @@ const s = {
   },
 }
 
-export default function MermaidPreview({ code }) {
+export default function MermaidPreview({ code, width = 400 }) {
   const [lastValidSvg, setLastValidSvg] = useState(null)  // never wiped on error
   const [invalid, setInvalid]           = useState(false)  // true while syntax is broken
   const [loading, setLoading]           = useState(true)
@@ -127,7 +124,7 @@ export default function MermaidPreview({ code }) {
   const dotColor = loading ? '#555' : invalid ? '#e5c07b' : '#4ec9a2'
 
   return (
-    <div style={s.panel}>
+    <div style={{ ...s.panel, width: `${width}px`, minWidth: '200px', maxWidth: '80vw' }}>
       <div style={s.header}>
         <span style={s.dot(dotColor)} />
         Diagram preview
