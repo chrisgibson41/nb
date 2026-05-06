@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { acceptCompletion, nextSnippetField, prevSnippetField } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -48,6 +49,15 @@ function createEditorState(doc, onChange, onMermaidChange) {
     doc,
     extensions: [
       history(),
+      // High-priority Tab bindings that run before indentWithTab:
+      //   1. Accept the active completion dropdown (if open)
+      //   2. Move to the next snippet placeholder (if a snippet is active)
+      // Both commands return false when they don't apply, so Tab falls
+      // through to indentWithTab for normal indentation.
+      Prec.high(keymap.of([
+        { key: 'Tab',       run: acceptCompletion },
+        { key: 'Tab',       run: nextSnippetField, shift: prevSnippetField },
+      ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       oneDark,
