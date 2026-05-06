@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently -k \"node server.js --config config.json\" \"cd client && npm run dev\"",
     "build": "cd client && npm run build",
-    "start": "npm run build && node server.js --config config.json",
+    "start": "bash run.sh",
     "install:all": "npm install && cd client && npm install",
     "prepare": "git config core.hooksPath .githooks || true",
     "test:unit": "cd client && npm run test:run",
