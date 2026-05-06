@@ -53,8 +53,8 @@ function collectParticipants(state, block) {
     const decl = text.match(/^(?:participant|actor)\s+(.+?)(?:\s+as\s+\S+)?$/)
     if (decl) { add(decl[1]); continue }
 
-    // Alice ->> Bob: message  (any arrow variant)
-    const msg = text.match(/^(.+?)\s+(?:--?>>?|--?x|--?\)|->[\+\-]?)\s+(.+?)(?:\s*:.*)?$/)
+    // Alice->>Bob: / Alice ->> Bob: / Alice-->Bob (any arrow, spaces optional)
+    const msg = text.match(/^(.+?)\s*(?:--?>>?|--?x|--?\)|->[\+\-]?)\s*(.+?)(?:\s*:.*)?$/)
     if (msg) { add(msg[1]); add(msg[2]); continue }
 
     // note over Alice, Bob
@@ -190,8 +190,14 @@ function sequenceSource(context, state, block) {
     return { from, options: [...nameOpts, ...aliasSnippets] }
   }
 
+  // Common arrow pattern used in the branches below
+  const ARROW_RE = /(?:--?>>?|--?x|--?\)|->[\+\-]?)/
+
   // ── "Sender Arrow Target" (no colon) → suggest ": " ─────────────────────
-  const noColon = trimmed.match(/^(\S+)\s+(?:--?>>?|--?x|--?\)|->[\+\-]?)\s+(\S+)$/)
+  // Handles both spaced (Alice ->> Bob) and compact (Alice->>Bob) forms
+  const noColon = trimmed.match(new RegExp(
+    '^(\\S+?)\\s*' + ARROW_RE.source + '\\s*(\\S+)$'
+  ))
   if (noColon) {
     return {
       from: pos,
@@ -199,8 +205,11 @@ function sequenceSource(context, state, block) {
     }
   }
 
-  // ── "Sender Arrow " → participant names as targets ───────────────────────
-  const afterArrow = trimmed.match(/^(\S+)\s+(?:--?>>?|--?x|--?\)|->[\+\-]?)\s+([\w]*)$/)
+  // ── "Sender Arrow[space]" → participant names as targets ─────────────────
+  // The trailing space after the arrow tells us the user wants a target
+  const afterArrow = trimmed.match(new RegExp(
+    '^(\\S+?)\\s*' + ARROW_RE.source + '\\s+([\\w]*)$'
+  ))
   if (afterArrow) {
     const partial = afterArrow[2]
     return {
@@ -209,12 +218,12 @@ function sequenceSource(context, state, block) {
     }
   }
 
-  // ── "Sender " (after known participant name) → arrow types ───────────────
-  // Match: line starts with a known participant name followed by a space and
-  // optional start of an arrow.
-  const beforeArrow = trimmed.match(/^(\S+)\s+([-<>x)]{0,4})$/)
+  // ── "Sender[-partial-arrow]" → arrow types ────────────────────────────────
+  // Fires when the line starts with a known participant name followed by
+  // optional whitespace and 0–4 arrow chars (e.g. "Alice " or "Alice -")
+  const beforeArrow = trimmed.match(/^(\S+?)(\s+[-<>x)]*|[-<>x)]{0,4})$/)
   if (beforeArrow && participants.includes(beforeArrow[1])) {
-    const partial = beforeArrow[2]
+    const partial = beforeArrow[2].replace(/^\s+/, '')  // strip leading spaces from partial
     return {
       from: pos - partial.length,
       options: SEQ_ARROWS.map(a => ({ ...a, type: 'keyword' })),

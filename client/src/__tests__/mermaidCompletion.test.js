@@ -164,13 +164,24 @@ describe('mermaidCompletionSource', () => {
     const seq = (inner, explicit = false) =>
       mermaidCtx('sequenceDiagram\n' + inner, explicit)
 
-    it('collects participants implied by message lines', () => {
-      // Alice and Bob appear only in a message line, not declared with "participant"
+    it('collects participants implied by message lines (with spaces)', () => {
       const result = mermaidCompletionSource(seq('Alice ->> Bob: hello\n', true))
       expect(result).not.toBeNull()
       const labels = result.options.map(o => o.label)
       expect(labels).toContain('Alice')
       expect(labels).toContain('Bob')
+    })
+
+    it('collects participants from compact arrows without spaces (Alice->>John)', () => {
+      // Real-world mermaid often omits spaces around arrows
+      const result = mermaidCompletionSource(seq(
+        'Alice->>John: Hello John, how are you?\nJohn-->>Alice: Great!\nAlice-)John: See you later!\n',
+        true
+      ))
+      expect(result).not.toBeNull()
+      const labels = result.options.map(o => o.label)
+      expect(labels).toContain('Alice')
+      expect(labels).toContain('John')
     })
 
     it('collects participants from note lines', () => {
