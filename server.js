@@ -16,7 +16,29 @@ const wss = new WebSocketServer({ server });
 const PORT = 3001;
 
 // --- Config ---
-const CONFIG_FILE = path.resolve('./config.json');
+// Resolve config file path from (in priority order):
+//   1. --config <path> CLI argument
+//   2. NB_CONFIG environment variable
+//   3. ./config.json next to server.js (local dev fallback)
+function resolveConfigPath() {
+  const flagIdx = process.argv.indexOf('--config');
+  if (flagIdx !== -1 && process.argv[flagIdx + 1]) {
+    return path.resolve(process.argv[flagIdx + 1]);
+  }
+  if (process.env.NB_CONFIG) {
+    return path.resolve(process.env.NB_CONFIG);
+  }
+  return path.join(__dirname, 'config.json');
+}
+
+const CONFIG_FILE = resolveConfigPath();
+
+if (!fs.existsSync(CONFIG_FILE)) {
+  console.error(`Error: config file not found: ${CONFIG_FILE}`);
+  console.error('Pass a config path via --config <path> or the NB_CONFIG env var.');
+  console.error('See config.example.json for the expected format.');
+  process.exit(1);
+}
 
 function expandHome(p) {
   if (!p) return p;
@@ -557,6 +579,7 @@ if (fs.existsSync(CLIENT_DIST)) {
 
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`  Config:    ${CONFIG_FILE}`);
   console.log(`  Notes:     ${NOTES_DIR}`);
   console.log(`  Templates: ${TEMPLATES_DIR}`);
 });
