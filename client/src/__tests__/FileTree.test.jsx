@@ -89,17 +89,6 @@ describe('FileTree', () => {
       });
     });
 
-    it('shows canvas files with correct extension', async () => {
-      mockFetch({
-        ...mockTree,
-        children: [{ name: 'board.canvas', path: 'notes/board.canvas', type: 'file', children: null }],
-      });
-      render(<FileTree {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByText('board')).toBeInTheDocument();
-        expect(screen.getByText('.canvas')).toBeInTheDocument();
-      });
-    });
   });
 
   describe('toolbar buttons', () => {
@@ -111,11 +100,6 @@ describe('FileTree', () => {
     it('renders New folder button', () => {
       render(<FileTree {...defaultProps} />);
       expect(screen.getByTitle('New folder')).toBeInTheDocument();
-    });
-
-    it('renders New canvas button', () => {
-      render(<FileTree {...defaultProps} />);
-      expect(screen.getByTitle('New canvas')).toBeInTheDocument();
     });
 
     it('renders New from template button', () => {
@@ -145,7 +129,7 @@ describe('FileTree', () => {
     });
   });
 
-  describe('InputModal for new file/folder/canvas', () => {
+  describe('InputModal for new file/folder', () => {
     it('shows InputModal when New note button is clicked', async () => {
       const user = userEvent.setup();
       render(<FileTree {...defaultProps} />);
@@ -161,15 +145,6 @@ describe('FileTree', () => {
       await user.click(screen.getByTitle('New folder'));
       await waitFor(() => {
         expect(screen.getByText('New folder name:')).toBeInTheDocument();
-      });
-    });
-
-    it('shows InputModal when New canvas button is clicked', async () => {
-      const user = userEvent.setup();
-      render(<FileTree {...defaultProps} />);
-      await user.click(screen.getByTitle('New canvas'));
-      await waitFor(() => {
-        expect(screen.getByText('Canvas name:')).toBeInTheDocument();
       });
     });
 
@@ -226,34 +201,6 @@ describe('FileTree', () => {
       });
     });
 
-    it('creates a canvas file with JSON content when submitted', async () => {
-      const user = userEvent.setup();
-      fetch.mockImplementation((url, opts) => {
-        if (url.includes('/api/templates')) return Promise.resolve({ ok: true, json: async () => [] });
-        if (url.includes('/api/tree')) return Promise.resolve({ ok: true, json: async () => mockTree });
-        if (opts?.method === 'PUT') return Promise.resolve({ ok: true, json: async () => ({}) });
-        return Promise.resolve({ ok: true, json: async () => ({}) });
-      });
-
-      render(<FileTree {...defaultProps} />);
-      await user.click(screen.getByTitle('New canvas'));
-      await waitFor(() => expect(screen.getByText('Canvas name:')).toBeInTheDocument());
-
-      const modalMsg = screen.getByText('Canvas name:');
-      const modal = modalMsg.closest('div[style*="flex-direction: column"]');
-      const input = modal ? modal.querySelector('input') : screen.getAllByRole('textbox').at(-1);
-      await user.clear(input);
-      await user.type(input, 'my-board');
-      await user.click(screen.getByText('OK'));
-
-      await waitFor(() => {
-        const putCalls = fetch.mock.calls.filter(c => c[1]?.method === 'PUT');
-        expect(putCalls.length).toBeGreaterThan(0);
-        const body = JSON.parse(putCalls[0][1].body);
-        expect(body.path).toContain('.canvas');
-        expect(body.content).toBe('{"nodes":[],"edges":[]}');
-      });
-    });
   });
 
   describe('file selection', () => {
@@ -383,73 +330,6 @@ describe('FileTree', () => {
     });
   });
 
-  describe('canvas creation — tree refresh', () => {
-    it('re-fetches /api/tree after canvas creation so the file appears immediately', async () => {
-      const user = userEvent.setup();
-      const onFileSelect = vi.fn();
-      let treeCallCount = 0;
-
-      fetch.mockImplementation((url, opts) => {
-        if (url.includes('/api/templates')) return Promise.resolve({ ok: true, json: async () => [] });
-        if (url.includes('/api/tree')) {
-          treeCallCount++;
-          return Promise.resolve({ ok: true, json: async () => mockTree });
-        }
-        if (opts?.method === 'PUT') return Promise.resolve({ ok: true, json: async () => ({}) });
-        return Promise.resolve({ ok: true, json: async () => ({}) });
-      });
-
-      render(<FileTree {...defaultProps} onFileSelect={onFileSelect} />);
-
-      // Wait for initial load (first /api/tree call)
-      await waitFor(() => screen.getByText('alpha'));
-      const initialCalls = treeCallCount;
-
-      // Create a canvas
-      await user.click(screen.getByTitle('New canvas'));
-      await waitFor(() => expect(screen.getByText('Canvas name:')).toBeInTheDocument());
-      const modalMsg = screen.getByText('Canvas name:');
-      const modal = modalMsg.closest('div[style*="flex-direction: column"]');
-      const input = modal ? modal.querySelector('input') : screen.getAllByRole('textbox').at(-1);
-      await user.clear(input);
-      await user.type(input, 'my-board');
-      await user.click(screen.getByText('OK'));
-
-      // Tree should have been re-fetched (loadTree called directly)
-      await waitFor(() => {
-        expect(treeCallCount).toBeGreaterThan(initialCalls);
-      });
-    });
-
-    it('calls onFileSelect with canvas path after creation', async () => {
-      const user = userEvent.setup();
-      const onFileSelect = vi.fn();
-
-      fetch.mockImplementation((url, opts) => {
-        if (url.includes('/api/templates')) return Promise.resolve({ ok: true, json: async () => [] });
-        if (url.includes('/api/tree')) return Promise.resolve({ ok: true, json: async () => mockTree });
-        if (opts?.method === 'PUT') return Promise.resolve({ ok: true, json: async () => ({}) });
-        return Promise.resolve({ ok: true, json: async () => ({}) });
-      });
-
-      render(<FileTree {...defaultProps} onFileSelect={onFileSelect} />);
-      await waitFor(() => screen.getByText('alpha'));
-
-      await user.click(screen.getByTitle('New canvas'));
-      await waitFor(() => expect(screen.getByText('Canvas name:')).toBeInTheDocument());
-      const modalMsg = screen.getByText('Canvas name:');
-      const modal = modalMsg.closest('div[style*="flex-direction: column"]');
-      const input = modal ? modal.querySelector('input') : screen.getAllByRole('textbox').at(-1);
-      await user.clear(input);
-      await user.type(input, 'board');
-      await user.click(screen.getByText('OK'));
-
-      await waitFor(() => {
-        expect(onFileSelect).toHaveBeenCalledWith(expect.stringContaining('.canvas'));
-      });
-    });
-  });
-
   describe('tooltips', () => {
     it('New note button has correct title', () => {
       render(<FileTree {...defaultProps} />);
@@ -459,11 +339,6 @@ describe('FileTree', () => {
     it('New folder button has correct title', () => {
       render(<FileTree {...defaultProps} />);
       expect(screen.getByTitle('New folder')).toBeInTheDocument();
-    });
-
-    it('New canvas button has correct title', () => {
-      render(<FileTree {...defaultProps} />);
-      expect(screen.getByTitle('New canvas')).toBeInTheDocument();
     });
 
     it('New from template button has correct title', () => {

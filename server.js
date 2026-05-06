@@ -101,6 +101,12 @@ ensureDirs();
 app.use(cors());
 app.use(express.json());
 
+// Serve the built React client (production mode)
+const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
+if (fs.existsSync(CLIENT_DIST)) {
+  app.use(express.static(CLIENT_DIST));
+}
+
 // --- WebSocket ---
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'connected' }));
@@ -541,6 +547,13 @@ app.get('/api/git/show', (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// SPA fallback — serve index.html for any non-API route
+if (fs.existsSync(CLIENT_DIST)) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(CLIENT_DIST, 'index.html'));
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

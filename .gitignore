@@ -2,3 +2,4 @@
 .DS_Store
 .claude
 /client/node_modules
+/client/dist

@@ -42,17 +42,6 @@ export async function createFolder(page, folderName) {
   await page.waitForSelector(`text=${folderName}`, { timeout: 5000 });
 }
 
-/** Create a canvas file via the toolbar button */
-export async function createCanvas(page, canvasName) {
-  await page.getByTitle('New canvas').click();
-  await page.waitForSelector('text=Canvas name:');
-  const input = page.locator('input').last();
-  await input.clear();
-  await input.fill(canvasName.replace(/\.canvas$/, ''));
-  await page.getByRole('button', { name: 'OK' }).click();
-  await page.waitForSelector(`text=${canvasName}`, { timeout: 5000 });
-}
-
 /** Type content into the CodeMirror editor */
 export async function typeInEditor(page, text) {
   const editor = page.locator('.cm-content');

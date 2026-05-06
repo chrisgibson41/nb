@@ -13,11 +13,6 @@ vi.mock('../components/EditorPane.jsx', () => ({
   )),
 }));
 
-vi.mock('../components/Canvas.jsx', () => ({
-  default: ({ filePath }) => (
-    <div data-testid="canvas-view" data-filepath={filePath}>Canvas</div>
-  ),
-}));
 
 import App from '../App';
 
@@ -179,25 +174,6 @@ describe('App', () => {
       });
     });
 
-    it('opens canvas file in Canvas component', async () => {
-      const canvasTree = {
-        name: 'notes', path: 'notes', type: 'dir',
-        children: [
-          { name: 'board.canvas', path: 'notes/board.canvas', type: 'file', children: null },
-        ],
-      };
-      setupFetchMock({ tree: canvasTree, content: '{"nodes":[],"edges":[]}' });
-
-      const user = userEvent.setup();
-      render(<App />);
-
-      await waitFor(() => screen.getByText('board'));
-      await user.click(screen.getByText('board'));
-
-      await waitFor(() => {
-        expect(screen.getByTestId('canvas-view')).toBeInTheDocument();
-      });
-    });
   });
 
   describe('tabs', () => {
