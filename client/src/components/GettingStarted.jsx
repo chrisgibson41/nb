@@ -151,7 +151,7 @@ export default function GettingStarted({ onClose }) {
           </svg>
           NB — Getting Started
         </div>
-        <p style={s.subtitle}>A fast, local-first Markdown note-taking app with a canvas whiteboard.</p>
+        <p style={s.subtitle}>A fast, local-first Markdown note-taking app.</p>
       </div>
 
       {/* ── Core editing ─────────────────────────── */}
@@ -243,35 +243,6 @@ export default function GettingStarted({ onClose }) {
           browse saved snapshots of the current file. Click a snapshot to preview it
           and <strong style={{ color: '#ccc' }}>Restore</strong> to roll back to that
           version.
-        </FeatureCard>
-      </div>
-
-      {/* ── Canvas ───────────────────────────────── */}
-      <div style={s.sectionTitle}>Canvas whiteboard</div>
-      <div style={s.grid}>
-        <FeatureCard accent="#007acc" icon="🖼️" title="Creating a canvas">
-          Click the image icon in the file tree toolbar (or right-click a folder and
-          choose <strong style={{ color: '#ccc' }}>New Canvas</strong>) to create a{' '}
-          <Code>.canvas</Code> file. It opens as an infinite whiteboard.
-        </FeatureCard>
-
-        <FeatureCard accent="#4fc1ff" icon="🟦" title="Text cards">
-          Double-click anywhere on the canvas to add a text card, or click{' '}
-          <strong style={{ color: '#ccc' }}>Text card</strong> in the toolbar.
-          Type freely inside the card. Select a card to resize it or choose a colour
-          theme from the dot-palette that appears above.
-        </FeatureCard>
-
-        <FeatureCard accent="#98c379" icon="📎" title="Note cards">
-          Click <strong style={{ color: '#ccc' }}>Note card</strong> to embed a
-          reference to an existing Markdown note. The card shows the note's filename
-          and an <strong style={{ color: '#ccc' }}>Open note →</strong> button.
-        </FeatureCard>
-
-        <FeatureCard accent="#e06c75" icon="↔️" title="Connections">
-          Hover a card to reveal connection handles on all four edges. Drag from a
-          handle to another card to draw an arrow. Click a connection to select and
-          delete it with <Kbd>Delete</Kbd> or <Kbd>Backspace</Kbd>.
         </FeatureCard>
       </div>
 

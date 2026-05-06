@@ -11,10 +11,10 @@ import SettingsModal from './components/SettingsModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
 import TabBar from './components/TabBar.jsx';
-import Canvas from './components/Canvas.jsx';
 import GettingStarted from './components/GettingStarted.jsx';
 
-const API = 'http://localhost:3001';
+// In dev, Vite proxies /api → localhost:3001. In production, same origin.
+const API = '';
 
 export default function App() {
   const [currentFile, setCurrentFile] = useState(null);
@@ -53,7 +53,8 @@ export default function App() {
   // WebSocket — live file-tree updates
   useEffect(() => {
     function connect() {
-      const ws = new WebSocket('ws://localhost:3001');
+      const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onmessage = (evt) => {
         try {
@@ -281,8 +282,7 @@ export default function App() {
         </div>
 
         <div className="main-area">
-          {/* ShortcutsPanel only for markdown files */}
-          {currentFile && !currentFile.endsWith('.canvas') && (
+          {currentFile && (
             <ShortcutsPanel
               content={content}
               setContent={handleContentChange}
@@ -292,15 +292,6 @@ export default function App() {
             />
           )}
           {currentFile ? (
-            currentFile.endsWith('.canvas') ? (
-              // ── Canvas view ──────────────────────────────────────────────
-              <Canvas
-                content={content}
-                onChange={handleContentChange}
-                filePath={currentFile}
-                onOpenNote={openFile}
-              />
-            ) : (
             <div className="editor-area">
               <div className="editor-with-outline">
                 <EditorPane
@@ -317,7 +308,6 @@ export default function App() {
               </div>
               <TagBar content={content} setContent={handleContentChange} />
             </div>
-            ) /* end editor branch */
           ) : showGettingStarted ? (
             <GettingStarted onClose={() => {
               setShowGettingStarted(false);

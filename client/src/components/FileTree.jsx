@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useReducer, createContext, useContext } from 'react';
 import ReactDOM from 'react-dom';
 
-const API = 'http://localhost:3001';
+const API = '';
 const NOTES_DIR_FALLBACK = 'notes';
 
 const styles = {
@@ -735,28 +735,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
     }
   };
 
-  const handleNewCanvas = async () => {
-    const name = await showPrompt('Canvas name:', 'untitled');
-    if (!name) return;
-    const fname = name.endsWith('.canvas') ? name : name + '.canvas';
-    const filePath = `${rootPath}/${fname}`;
-    try {
-      const res = await fetch(`${API}/api/file`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, content: '{"nodes":[],"edges":[]}' }),
-      });
-      if (!res.ok) throw new Error('Failed to create canvas');
-      // Await the tree reload directly so the new file is visible in the sidebar
-      // before we open it — using the prop-chain (onRefresh) schedules the reload
-      // as a side-effect and can race with the file opening.
-      await loadTree();
-      onFileSelect(filePath);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handlePromptSubmit = (value) => {
     if (promptState) { promptState.resolve(value); setPromptState(null); }
   };
@@ -798,16 +776,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 <line x1="12" y1="11" x2="12" y2="17"/>
                 <line x1="9" y1="14" x2="15" y2="14"/>
-              </svg>
-            </button>
-            {/* New canvas */}
-            <button style={styles.iconBtn} title="New canvas" onClick={handleNewCanvas}
-              onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/>
-                <polyline points="21 15 16 10 5 21"/>
               </svg>
             </button>
             {/* New from template */}

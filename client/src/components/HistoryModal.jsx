@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const API = 'http://localhost:3001';
+const API = '';
 
 function formatDate(str) {
   try {

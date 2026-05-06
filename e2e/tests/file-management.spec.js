@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissGettingStarted, createNote, createFolder, createCanvas, waitForTree } from '../helpers.js';
+import { dismissGettingStarted, createNote, createFolder, waitForTree } from '../helpers.js';
 
 test.describe('File Management', () => {
   test.beforeEach(async ({ page }) => {
@@ -74,25 +74,6 @@ test.describe('File Management', () => {
     await page.getByRole('button', { name: 'OK' }).click();
 
     await expect(page.getByText(noteName, { exact: true })).toBeVisible();
-  });
-
-  // ── Canvas ───────────────────────────────────────────────────────────────────
-
-  test('create a canvas file', async ({ page }) => {
-    const canvasName = `e2e-canvas-${Date.now()}`;
-    await createCanvas(page, canvasName);
-
-    // .canvas extension visible in tree
-    await expect(page.getByText(`${canvasName}.canvas`).first()).toBeVisible();
-    // Canvas view rendered (React Flow background dots)
-    await expect(page.locator('.react-flow')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('cancel canvas creation does not create file', async ({ page }) => {
-    await page.getByTitle('New canvas').click();
-    await page.waitForSelector('text=Canvas name:');
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.locator('text=Canvas name:')).not.toBeVisible();
   });
 
   // ── Rename ───────────────────────────────────────────────────────────────────

@@ -19,7 +19,6 @@
     "@codemirror/state": "^6.4.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.34.0",
-    "@xyflow/react": "^12.10.2",
     "gray-matter": "^4.0.3",
     "mermaid": "^11.14.0",
     "react": "^18.3.1",
