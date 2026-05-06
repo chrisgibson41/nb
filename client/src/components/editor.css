@@ -312,3 +312,48 @@
   color: #f44747;
   white-space: pre-wrap;
 }
+
+/* ── Mermaid autocompletion dropdown ─────────────────────────────────────── */
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  font-family: 'Fira Code', 'Consolas', ui-monospace, monospace;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.cm-tooltip-autocomplete > ul {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cm-tooltip-autocomplete > ul > li {
+  padding: 4px 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: #094771;
+  color: #ffffff;
+}
+
+.cm-completionLabel {
+  color: #9cdcfe;
+  flex-shrink: 0;
+}
+
+.cm-completionDetail {
+  color: #555;
+  font-size: 11px;
+  font-style: normal;
+  font-family: system-ui, sans-serif;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
+  color: #aaa;
+}

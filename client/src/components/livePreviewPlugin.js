@@ -601,7 +601,7 @@ const tableBlockField = StateField.define({
 
 // ─── Shared fence block parser ────────────────────────────────────────────────
 
-function parseFenceBlocks(state) {
+export function parseFenceBlocks(state) {
   const blocks = []
   let fenceStart = -1
   let fenceLang = ''
@@ -616,7 +616,7 @@ function parseFenceBlocks(state) {
   return blocks
 }
 
-function getCursorLines(state, fenceBlocks) {
+export function getCursorLines(state, fenceBlocks) {
   const cursorLines = new Set()
   for (const range of state.selection.ranges) {
     const a = state.doc.lineAt(range.from).number
@@ -1003,6 +1003,39 @@ function addInline(builder, text, offset) {
   }
 }
 
+// ─── Active mermaid block StateField ─────────────────────────────────────────
+// Returns the trimmed code string of whichever mermaid block the cursor is
+// currently inside, or null when the cursor is elsewhere. Consumed by EditorPane
+// to drive the live split-pane preview.
+
+function getActiveMermaidCode(state) {
+  try {
+    const blocks = parseFenceBlocks(state)
+    const cursorLines = getCursorLines(state, blocks)
+    for (const block of blocks) {
+      if (block.lang !== 'mermaid') continue
+      for (let n = block.start; n <= block.end; n++) {
+        if (cursorLines.has(n)) {
+          let code = ''
+          for (let i = block.start + 1; i < block.end; i++) {
+            code += state.doc.line(i).text + '\n'
+          }
+          return code.trim()
+        }
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return null
+}
+
+export const activeMermaidField = StateField.define({
+  create: getActiveMermaidCode,
+  update(val, tr) {
+    if (tr.docChanged || tr.selection) return getActiveMermaidCode(tr.state)
+    return val
+  },
+})
+
 // ─── Export plugin ────────────────────────────────────────────────────────────
 // Exported as an array so both extensions are registered together.
 
@@ -1024,6 +1057,7 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
 export const livePreviewPlugin = [
   frontmatterBlockField,
   mermaidBlockField,
+  activeMermaidField,
   tableBlockField,
   mermaidScrollListener,
   ViewPlugin.fromClass(

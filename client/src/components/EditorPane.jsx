@@ -1,11 +1,13 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { livePreviewPlugin } from './livePreviewPlugin.js'
+import { livePreviewPlugin, activeMermaidField } from './livePreviewPlugin.js'
+import { mermaidCompletion } from './mermaidCompletion.js'
+import MermaidPreview from './MermaidPreview.jsx'
 import './editor.css'
 
 const baseTheme = EditorView.theme({
@@ -41,7 +43,7 @@ const baseTheme = EditorView.theme({
   '.cm-activeLine':   { background: 'rgba(255,255,255,0.03)' },
 })
 
-function createEditorState(doc, onChange) {
+function createEditorState(doc, onChange, onMermaidChange) {
   return EditorState.create({
     doc,
     extensions: [
@@ -51,25 +53,33 @@ function createEditorState(doc, onChange) {
       oneDark,
       baseTheme,
       livePreviewPlugin,
+      mermaidCompletion,
       EditorView.lineWrapping,
       highlightActiveLine(),
       // Enable native OS spellcheck on the contenteditable div
       EditorView.contentAttributes.of({ spellcheck: 'true' }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) onChange(update.state.doc.toString())
+        if (update.docChanged || update.selectionSet) {
+          const code = update.state.field(activeMermaidField, false)
+          onMermaidChange(code ?? null)
+        }
       }),
     ],
   })
 }
 
 const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath, onWikiLink }, ref) {
-  const containerRef  = useRef(null)
-  const viewRef       = useRef(null)
-  const onChangeRef   = useRef(onChange)
-  const onWikiLinkRef = useRef(onWikiLink)
+  const containerRef      = useRef(null)
+  const viewRef           = useRef(null)
+  const onChangeRef       = useRef(onChange)
+  const onWikiLinkRef     = useRef(onWikiLink)
+  const [activeMermaid, setActiveMermaid] = useState(null)
+  const setMermaidRef     = useRef(setActiveMermaid)
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onWikiLinkRef.current = onWikiLink }, [onWikiLink])
+  useEffect(() => { setMermaidRef.current = setActiveMermaid }, [])
 
   // Listen for wiki-link click events dispatched by WikiLinkWidget
   useEffect(() => {
@@ -101,7 +111,11 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
   useEffect(() => {
     if (!containerRef.current) return
     const view = new EditorView({
-      state: createEditorState(content ?? '', val => onChangeRef.current(val)),
+      state: createEditorState(
+        content ?? '',
+        val  => onChangeRef.current(val),
+        code => setMermaidRef.current(code),
+      ),
       parent: containerRef.current,
     })
     viewRef.current = view
@@ -132,7 +146,12 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
     }
   }, [content]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <div ref={containerRef} className="cm-host" />
+  return (
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div ref={containerRef} className="cm-host" style={{ flex: 1, minWidth: 0 }} />
+      {activeMermaid !== null && <MermaidPreview code={activeMermaid} />}
+    </div>
+  )
 })
 
 export default EditorPane
