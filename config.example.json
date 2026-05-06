@@ -1,6 +1,6 @@
 {
-  "notesDir": "/Users/chris/git/nbdir/notes",
-  "templatesDir": "/Users/chris/git/nbdir/templates",
+  "notesDir": "~/notes",
+  "templatesDir": "~/notes/templates",
 
   "templatePaths": {
     "daily-note": "Daily/{{date}}.md",
