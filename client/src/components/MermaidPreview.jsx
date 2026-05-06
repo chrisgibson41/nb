@@ -25,6 +25,19 @@ async function getMermaid() {
 
 let seq = 0
 
+/**
+ * Mermaid renders SVGs with hard-coded width/height attrs and an inline
+ * max-width style.  Strip those out and replace with 100%/100% so the SVG
+ * scales to fill whatever container it sits in.  The viewBox is preserved,
+ * so the aspect ratio is maintained by the browser automatically.
+ */
+function normaliseSvg(svg) {
+  return svg
+    .replace(/\s+width="[^"]*"/, ' width="100%"')
+    .replace(/\s+height="[^"]*"/, ' height="100%"')
+    .replace(/\s+style="[^"]*max-width:[^"]*"/, '')
+}
+
 const s = {
   panel: {
     display: 'flex',
@@ -54,19 +67,29 @@ const s = {
     background: color,
     flexShrink: 0,
   }),
+  // Body fills all remaining panel height; no scroll — diagram is scaled to fit
   body: {
     flex: 1,
-    overflowY: 'auto',
-    overflowX: 'auto',
-    padding: '20px',
+    minHeight: 0,
+    overflow: 'hidden',
+    padding: '16px',
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
+  // SVG wrapper: takes the full body area so the SVG can fill it
+  svgWrap: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   invalidHint: {
     position: 'absolute',
-    bottom: '16px',
+    bottom: '12px',
     left: '50%',
     transform: 'translateX(-50%)',
     fontSize: '11px',
@@ -107,7 +130,7 @@ export default function MermaidPreview({ code, width = 400 }) {
         const id = `mermaid-preview-${++seq}`
         const { svg: rendered } = await m.render(id, code)
         if (!mountedRef.current) return
-        setLastValidSvg(rendered)
+        setLastValidSvg(normaliseSvg(rendered))
         setInvalid(false)
         setLoading(false)
       } catch {
@@ -134,7 +157,7 @@ export default function MermaidPreview({ code, width = 400 }) {
         {lastValidSvg && (
           <div
             dangerouslySetInnerHTML={{ __html: lastValidSvg }}
-            style={{ maxWidth: '100%', opacity: invalid ? 0.4 : 1, transition: 'opacity 0.15s' }}
+            style={{ ...s.svgWrap, opacity: invalid ? 0.4 : 1, transition: 'opacity 0.15s' }}
           />
         )}
         {/* Overlay hint when syntax is currently broken */}
