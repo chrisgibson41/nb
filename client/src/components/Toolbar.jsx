@@ -79,7 +79,7 @@ const styles = {
   },
 };
 
-export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, onHistory, searchQuery, setSearchQuery, currentFile }) {
+export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, onHistory, onTasks, searchQuery, setSearchQuery, currentFile }) {
   const fileName = currentFile ? currentFile.split('/').pop() : null;
 
   const noDrag = { WebkitAppRegion: 'no-drag' };
@@ -126,6 +126,20 @@ export default function Toolbar({ isUnsaved, onSave, onNewTemplate, onSettings, 
           History
         </button>
       )}
+
+      <button
+        style={{ ...styles.btn, ...noDrag }}
+        onClick={onTasks}
+        title="All tasks across notes"
+        onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; e.currentTarget.style.borderColor = '#555'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#3c3c3c'; }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        Tasks
+      </button>
 
       <button
         style={{ ...styles.btn, ...noDrag }}

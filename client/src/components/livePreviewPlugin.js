@@ -440,6 +440,82 @@ const frontmatterBlockField = StateField.define({
 
 // ─── Wiki link widget ─────────────────────────────────────────────────────────
 
+// ─── Note embed widget (![[Note Name]]) ──────────────────────────────────────
+// Renders the embedded note as a read-only card. Content is fetched once and
+// cached; the DOM element is updated directly when the fetch resolves so we
+// don't need a full CM6 StateField round-trip.
+
+const embedCache = new Map() // noteName → { status, content, el[] }
+
+class EmbedWidget extends WidgetType {
+  constructor(noteName) { super(); this.noteName = noteName }
+  eq(other) { return other.noteName === this.noteName }
+
+  toDOM() {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-embed-widget'
+
+    const cached = embedCache.get(this.noteName)
+    if (cached?.status === 'loaded') {
+      this._render(wrap, cached.content)
+    } else if (cached?.status === 'error') {
+      this._renderError(wrap)
+    } else {
+      this._renderLoading(wrap)
+      this._fetch(wrap)
+    }
+    return wrap
+  }
+
+  _renderLoading(el) {
+    el.innerHTML = `<div class="cm-embed-loading">↩ <em>${this.noteName}</em> — loading…</div>`
+  }
+
+  _renderError(el) {
+    el.innerHTML = `<div class="cm-embed-error">↩ <em>${this.noteName}</em> — not found</div>`
+  }
+
+  _render(el, raw) {
+    // Strip YAML frontmatter for display
+    const body = raw.startsWith('---\n')
+      ? raw.slice(raw.indexOf('\n---\n', 4) + 5).trimStart()
+      : raw
+    const preview = body.length > 600 ? body.slice(0, 600) + '…' : body
+
+    el.innerHTML = ''
+    const header = document.createElement('div')
+    header.className = 'cm-embed-header'
+    header.textContent = this.noteName
+
+    const content = document.createElement('div')
+    content.className = 'cm-embed-content'
+    content.textContent = preview
+
+    el.appendChild(header)
+    el.appendChild(content)
+  }
+
+  _fetch(el) {
+    if (embedCache.get(this.noteName)?.status === 'fetching') return
+    embedCache.set(this.noteName, { status: 'fetching' })
+
+    fetch(`/api/resolve?name=${encodeURIComponent(this.noteName)}`)
+      .then(r => r.ok ? r.json() : Promise.reject('not found'))
+      .then(({ path }) => fetch(`/api/file?path=${encodeURIComponent(path)}`))
+      .then(r => r.ok ? r.text() : Promise.reject('read error'))
+      .then(content => {
+        embedCache.set(this.noteName, { status: 'loaded', content })
+        if (el.isConnected) this._render(el, content)
+      })
+      .catch(() => {
+        embedCache.set(this.noteName, { status: 'error' })
+        if (el.isConnected) this._renderError(el)
+      })
+  }
+
+  ignoreEvent() { return true }
+}
+
 class WikiLinkWidget extends WidgetType {
   constructor(noteName) { super(); this.noteName = noteName }
   eq(other) { return other.noteName === this.noteName }
@@ -740,6 +816,15 @@ function parseInline(text, offset) {
       }
     }
 
+    // Note embed  ![[Note Name]]
+    if (ch === '!' && text[i+1] === '[' && text[i+2] === '[') {
+      const end = text.indexOf(']]', i + 3)
+      if (end !== -1) {
+        push(results, offset + i, offset + end + 2, 'embed:' + text.slice(i + 3, end))
+        i = end + 2; continue
+      }
+    }
+
     // Image  ![alt](url)  — show placeholder icon
     if (ch === '!' && text[i+1] === '[') {
       const cb = text.indexOf(']', i + 2)
@@ -993,7 +1078,10 @@ function buildDecorations(view) {
 function addInline(builder, text, offset) {
   const decs = parseInline(text, offset)
   for (const { from, to, type } of decs) {
-    if (type.startsWith('wiki:')) {
+    if (type.startsWith('embed:')) {
+      const noteName = type.slice(6)
+      builder.add(from, to, Decoration.replace({ widget: new EmbedWidget(noteName), block: true }))
+    } else if (type.startsWith('wiki:')) {
       const noteName = type.slice(5)
       builder.add(from, to, Decoration.replace({ widget: new WikiLinkWidget(noteName) }))
     } else {

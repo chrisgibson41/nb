@@ -10,6 +10,8 @@ import ShortcutsPanel from './components/ShortcutsPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
+import BacklinksPanel from './components/BacklinksPanel.jsx';
+import TasksPanel from './components/TasksPanel.jsx';
 import TabBar from './components/TabBar.jsx';
 import GettingStarted from './components/GettingStarted.jsx';
 
@@ -23,6 +25,7 @@ export default function App() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTasks, setShowTasks]     = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(() => {
     return !localStorage.getItem('nb:dismissedGettingStarted');
   });
@@ -253,6 +256,7 @@ export default function App() {
         onNewTemplate={() => setShowTemplateModal(true)}
         onSettings={() => setShowSettings(true)}
         onHistory={() => setShowHistory(true)}
+        onTasks={() => setShowTasks(true)}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentFile={currentFile}
@@ -304,6 +308,10 @@ export default function App() {
                 <OutlinePanel
                   content={content}
                   onScrollTo={text => editorRef.current?.scrollToText(text)}
+                />
+                <BacklinksPanel
+                  currentFile={currentFile}
+                  onFileSelect={openFile}
                 />
               </div>
               <TagBar content={content} setContent={handleContentChange} />
@@ -359,6 +367,13 @@ export default function App() {
           filePath={currentFile}
           onClose={() => setShowHistory(false)}
           onRestore={(restoredContent) => handleContentChange(restoredContent)}
+        />
+      )}
+
+      {showTasks && (
+        <TasksPanel
+          onClose={() => setShowTasks(false)}
+          onFileSelect={(path) => { openFile(path); setShowTasks(false); }}
         />
       )}
     </div>

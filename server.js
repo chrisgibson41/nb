@@ -550,6 +550,109 @@ app.get('/api/git/log', (req, res) => {
   }
 });
 
+// GET /api/git/diff?path=&hash=  — unified diff of a single commit vs its parent
+app.get('/api/git/diff', (req, res) => {
+  try {
+    const filePath = safePath(req.query.path, NOTES_DIR);
+    const hash = req.query.hash;
+    if (!hash || !/^[0-9a-f]{7,40}$/i.test(hash)) return res.status(400).json({ error: 'Invalid hash' });
+    exec(`git -C ${JSON.stringify(NOTES_DIR)} rev-parse --show-toplevel`, (err, topLevel) => {
+      if (err) return res.status(500).json({ error: 'Not a git repository' });
+      const repoRoot = topLevel.trim();
+      const relToRoot = path.relative(repoRoot, filePath);
+      // Diff this commit against its parent; for the first commit use --root
+      const cmd = `git -C ${JSON.stringify(repoRoot)} diff ${hash}~1 ${hash} -- ${JSON.stringify(relToRoot)} 2>/dev/null || git -C ${JSON.stringify(repoRoot)} show --format= ${hash} -- ${JSON.stringify(relToRoot)}`;
+      exec(cmd, (err2, stdout, stderr2) => {
+        if (err2) return res.status(500).json({ error: (stderr2 || err2.message).trim() });
+        res.type('text/plain').send(stdout);
+      });
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/tasks — all checkbox items across every note
+app.get('/api/tasks', (req, res) => {
+  try {
+    const results = [];
+    const TASK_RE = /^(\s*)- \[([ xX])\] (.+)$/;
+    function scanDir(dir) {
+      let entries;
+      try { entries = fs.readdirSync(dir); } catch { return; }
+      for (const entry of entries) {
+        if (entry.startsWith('.')) continue;
+        const fullPath = path.join(dir, entry);
+        let stat;
+        try { stat = fs.statSync(fullPath); } catch { continue; }
+        if (stat.isDirectory()) { scanDir(fullPath); continue; }
+        if (!entry.endsWith('.md')) continue;
+        try {
+          const lines = fs.readFileSync(fullPath, 'utf-8').split('\n');
+          lines.forEach((line, idx) => {
+            const m = line.match(TASK_RE);
+            if (m) results.push({
+              path: fullPath,
+              name: entry.replace(/\.md$/, ''),
+              lineNumber: idx + 1,
+              text: m[3].trim(),
+              done: m[2].toLowerCase() === 'x',
+            });
+          });
+        } catch { /* skip unreadable */ }
+      }
+    }
+    scanDir(NOTES_DIR);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/backlinks?name=NoteName — files that contain [[NoteName]]
+app.get('/api/backlinks', (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const baseName = name.replace(/\.md$/, '');
+    const esc = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const linkRe = new RegExp(`\\[\\[${esc}(?:\\.md)?(?:\\|[^\\]]*)?\\]\\]`, 'i');
+    const results = [];
+    function scanDir(dir) {
+      let entries;
+      try { entries = fs.readdirSync(dir); } catch { return; }
+      for (const entry of entries) {
+        if (entry.startsWith('.')) continue;
+        const fullPath = path.join(dir, entry);
+        let stat;
+        try { stat = fs.statSync(fullPath); } catch { continue; }
+        if (stat.isDirectory()) { scanDir(fullPath); continue; }
+        if (!entry.endsWith('.md')) continue;
+        // Skip the note itself
+        if (entry.replace(/\.md$/, '') === baseName) continue;
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          if (!linkRe.test(content)) continue;
+          const lines = content.split('\n');
+          let excerpt = '';
+          for (let i = 0; i < lines.length; i++) {
+            if (linkRe.test(lines[i])) {
+              const s = Math.max(0, i - 1), e = Math.min(lines.length - 1, i + 1);
+              excerpt = lines.slice(s, e + 1).join(' ').trim().slice(0, 120);
+              break;
+            }
+          }
+          results.push({ path: fullPath, name: entry.replace(/\.md$/, ''), excerpt });
+        } catch { /* skip */ }
+      }
+    }
+    scanDir(NOTES_DIR);
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/git/show', (req, res) => {
   try {
     const filePath = safePath(req.query.path, NOTES_DIR);

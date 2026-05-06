@@ -357,3 +357,50 @@
 .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
   color: #aaa;
 }
+
+/* ─── Note embed widget (![[Note Name]]) ──────────────────────────────────── */
+
+.cm-embed-widget {
+  display: block;
+  margin: 4px 0;
+  border: 1px solid #2e4a6e;
+  border-left: 3px solid #007acc;
+  border-radius: 4px;
+  background: #1a2535;
+  overflow: hidden;
+  cursor: default;
+}
+
+.cm-embed-header {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7caff4;
+  font-family: system-ui, sans-serif;
+  border-bottom: 1px solid #1e3350;
+  letter-spacing: 0.02em;
+}
+
+.cm-embed-content {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #8a9bb0;
+  font-family: system-ui, sans-serif;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow: hidden;
+}
+
+.cm-embed-loading,
+.cm-embed-error {
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  color: #555;
+}
+
+.cm-embed-error {
+  color: #c57b7b;
+}
