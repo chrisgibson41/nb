@@ -1,5 +1,6 @@
 import { autocompletion, snippetCompletion } from '@codemirror/autocomplete'
 import { parseFenceBlocks } from './livePreviewPlugin.js'
+import { wikiLinkCompletionSource } from './wikiLinkCompletion.js'
 
 // ─── Block helpers ────────────────────────────────────────────────────────────
 
@@ -417,9 +418,9 @@ export function mermaidCompletionSource(context) {
 // ─── Extension export ─────────────────────────────────────────────────────────
 
 export const mermaidCompletion = autocompletion({
-  override: [mermaidCompletionSource],
+  override: [mermaidCompletionSource, wikiLinkCompletionSource],
   activateOnTyping: true,
-  activateOnTypingDelay: 50,   // respond quickly so names appear as you type
+  activateOnTypingDelay: 50,
   maxRenderedOptions: 30,
   icons: false,
 })
