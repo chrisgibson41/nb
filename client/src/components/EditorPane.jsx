@@ -79,17 +79,16 @@ function createEditorState(doc, onChange, onMermaidChange) {
   })
 }
 
-const PREVIEW_MIN = 200
-const PREVIEW_MAX = 900
+const PREVIEW_MIN     = 200
 const PREVIEW_DEFAULT = 400
-const STORAGE_KEY = 'nb:mermaidPreviewWidth'
+const STORAGE_KEY     = 'nb:mermaidPreviewWidth'
 
 function loadPreviewWidth() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === null) return PREVIEW_DEFAULT
     const n = parseInt(raw, 10)
-    return Number.isFinite(n) ? Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, n)) : PREVIEW_DEFAULT
+    return Number.isFinite(n) ? Math.max(PREVIEW_MIN, n) : PREVIEW_DEFAULT
   } catch {
     return PREVIEW_DEFAULT
   }
@@ -185,7 +184,7 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
 
     const onMouseMove = (ev) => {
       const delta = dragRef.current.startX - ev.clientX  // dragging left grows the panel
-      const next = Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, dragRef.current.startWidth + delta))
+      const next = Math.max(PREVIEW_MIN, dragRef.current.startWidth + delta)
       setPreviewWidth(next)
       dragRef.current.lastWidth = next
     }

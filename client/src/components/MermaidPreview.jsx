@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 let mermaidReady = null  // shared promise so init runs only once
 
@@ -26,15 +26,22 @@ async function getMermaid() {
 let seq = 0
 
 /**
- * Mermaid renders SVGs with hard-coded width/height attrs and an inline
- * max-width style.  Strip those out and replace with 100%/100% so the SVG
- * scales to fill whatever container it sits in.  The viewBox is preserved,
- * so the aspect ratio is maintained by the browser automatically.
+ * Strip mermaid's hard-coded max-width inline style, and replace the SVG's
+ * explicit pixel width/height with the natural values extracted from the
+ * viewBox (e.g. "0 0 677 420" → width=677, height=420).  The body container
+ * uses overflow:auto so large diagrams scroll; min-width:100% on the SVG
+ * ensures small diagrams still fill the panel.
  */
 function normaliseSvg(svg) {
+  // Parse the 3rd and 4th viewBox tokens as the natural pixel dimensions.
+  // viewBox can have negative offsets: "-50 -10 677 420" → w=677, h=420
+  const vb = svg.match(/viewBox="[^"]*\s([0-9.]+)\s+([0-9.]+)"/)
+  const w   = vb ? Math.ceil(parseFloat(vb[1])) : null
+  const h   = vb ? Math.ceil(parseFloat(vb[2])) : null
+
   return svg
-    .replace(/\s+width="[^"]*"/, ' width="100%"')
-    .replace(/\s+height="[^"]*"/, ' height="100%"')
+    .replace(/\s+width="[^"]*"/, w ? ` width="${w}"` : '')
+    .replace(/\s+height="[^"]*"/, h ? ` height="${h}"` : '')
     .replace(/\s+style="[^"]*max-width:[^"]*"/, '')
 }
 
@@ -67,25 +74,19 @@ const s = {
     background: color,
     flexShrink: 0,
   }),
-  // Body fills all remaining panel height; no scroll — diagram is scaled to fit
+  // Body scrolls in both axes — large diagrams overflow, small ones centre
   body: {
     flex: 1,
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'auto',
     padding: '16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
     position: 'relative',
   },
-  // SVG wrapper: takes the full body area so the SVG can fill it
+  // SVG wrapper: at least as wide as the body; SVG renders at its natural size
   svgWrap: {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    display: 'inline-block',
+    minWidth: '100%',
+    minHeight: '100%',
   },
   invalidHint: {
     position: 'absolute',
@@ -115,11 +116,22 @@ export default function MermaidPreview({ code, width = 400 }) {
   const [loading, setLoading]           = useState(true)
   const timerRef    = useRef(null)
   const mountedRef  = useRef(true)
+  const bodyRef     = useRef(null)   // scroll container
+  const scrollRef   = useRef({ top: 0, left: 0 })  // saved scroll position
 
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
   }, [])
+
+  // After the SVG DOM updates, restore the scroll position so edits don't
+  // jump the view back to the top-left corner.
+  useLayoutEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop  = scrollRef.current.top
+      bodyRef.current.scrollLeft = scrollRef.current.left
+    }
+  }, [lastValidSvg])
 
   useEffect(() => {
     if (!code) return
@@ -147,12 +159,18 @@ export default function MermaidPreview({ code, width = 400 }) {
   const dotColor = loading ? '#555' : invalid ? '#e5c07b' : '#4ec9a2'
 
   return (
-    <div style={{ ...s.panel, width: `${width}px`, minWidth: '200px', maxWidth: '80vw' }}>
+    <div style={{ ...s.panel, width: `${width}px`, minWidth: '200px' }}>
       <div style={s.header}>
         <span style={s.dot(dotColor)} />
         Diagram preview
       </div>
-      <div style={s.body}>
+      <div
+        ref={bodyRef}
+        style={s.body}
+        onScroll={(e) => {
+          scrollRef.current = { top: e.target.scrollTop, left: e.target.scrollLeft }
+        }}
+      >
         {/* Always show the last valid diagram if we have one */}
         {lastValidSvg && (
           <div
