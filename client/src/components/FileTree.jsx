@@ -4,6 +4,51 @@ import ReactDOM from 'react-dom';
 const API = '';
 const NOTES_DIR_FALLBACK = 'notes';
 
+// ── Folder color helpers ──────────────────────────────────────────────────────
+
+function loadFolderColors() {
+  try { return JSON.parse(localStorage.getItem('nb:folder-colors') || '{}'); } catch { return {}; }
+}
+function saveFolderColors(map) {
+  try { localStorage.setItem('nb:folder-colors', JSON.stringify(map)); } catch {}
+}
+
+const FOLDER_COLORS = [
+  '#e06c75', // red
+  '#e5c07b', // yellow
+  '#98c379', // green
+  '#56b6c2', // cyan
+  '#61afef', // blue
+  '#c678dd', // purple
+  '#d19a66', // orange
+  '#abb2bf', // grey
+];
+
+// ── PDF export helper ─────────────────────────────────────────────────────────
+
+async function exportToPdf(filePath) {
+  try {
+    const res = await fetch(`/api/export/html?path=${encodeURIComponent(filePath)}`);
+    if (!res.ok) throw new Error('Export failed');
+    const html = await res.text();
+    const blob = new Blob([html], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, '_blank');
+    if (win) {
+      win.addEventListener('load', () => {
+        win.print();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      });
+    }
+  } catch (err) {
+    console.error('PDF export failed:', err);
+  }
+}
+
+// ── Folder color context ──────────────────────────────────────────────────────
+
+const FolderColorContext = createContext(null);
+
 const styles = {
   container: {
     display: 'flex',
@@ -330,6 +375,7 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
 
   // ── All hooks must come before any early return (Rules of Hooks) ────────────
   const showPrompt = useContext(PromptContext);
+  const { folderColors, setFolderColor } = useContext(FolderColorContext);
 
   // Filter logic — defined before any conditional returns so hook order is stable
   const matchesFilter = useCallback((n, q) => {
@@ -433,10 +479,15 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
   const ext = !isDir && node.name.includes('.') ? '.' + node.name.split('.').pop() : '';
   const nameWithoutExt = !isDir && ext ? node.name.slice(0, -ext.length) : node.name;
 
+  const folderColor = isDir ? folderColors[node.path] : null;
+  const folderColorStyle = folderColor
+    ? { borderLeft: `3px solid ${folderColor}`, paddingLeft: `${9 + depth * 14}px`, background: isDragOver ? '#1c3a5c' : isActive ? '#37373d' : hovered ? '#2a2d2e' : `${folderColor}0f` }
+    : {};
+
   return (
     <div>
       <div
-        style={styles.item(depth, isActive, hovered, isDragOver)}
+        style={{ ...styles.item(depth, isActive, hovered, isDragOver), ...folderColorStyle }}
         draggable
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -572,6 +623,49 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
             Delete
           </div>
+          {!isDir && node.name.endsWith('.md') && (
+            <>
+              <div style={{ height: '1px', background: '#3c3c3c', margin: '3px 8px' }} />
+              <div
+                style={styles.contextItem}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#37373d')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => { exportToPdf(node.path); closeContextMenu(); }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                Export to PDF
+              </div>
+            </>
+          )}
+          {isDir && (
+            <div style={{ padding: '6px 8px 4px', borderTop: '1px solid #3c3c3c' }}>
+              <div style={{ fontSize: '10px', color: '#666', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Folder colour
+              </div>
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                {FOLDER_COLORS.map(c => (
+                  <div
+                    key={c}
+                    onClick={() => { setFolderColor(node.path, c); closeContextMenu(); }}
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%', background: c, cursor: 'pointer',
+                      outline: folderColor === c ? '2px solid #fff' : 'none', outlineOffset: '1px',
+                    }}
+                  />
+                ))}
+                <div
+                  onClick={() => { setFolderColor(node.path, null); closeContextMenu(); }}
+                  style={{
+                    width: 16, height: 16, borderRadius: '50%', background: '#333', border: '1px solid #555',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, color: '#888',
+                  }}
+                >
+                  ✕
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -676,6 +770,20 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
   const [localFilter, setLocalFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [promptState, setPromptState] = useState(null);
+  const [folderColors, setFolderColorsState] = useState(loadFolderColors);
+
+  const setFolderColor = useCallback((folderPath, color) => {
+    setFolderColorsState(prev => {
+      const next = { ...prev };
+      if (color == null) {
+        delete next[folderPath];
+      } else {
+        next[folderPath] = color;
+      }
+      saveFolderColors(next);
+      return next;
+    });
+  }, []);
 
   const showPrompt = useCallback((message, defaultValue = '') => {
     return new Promise(resolve => setPromptState({ message, defaultValue, resolve }));
@@ -743,6 +851,7 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
   };
 
   return (
+    <FolderColorContext.Provider value={{ folderColors, setFolderColor }}>
     <PromptContext.Provider value={showPrompt}>
     {promptState && (
       <InputModal
@@ -850,5 +959,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
       />
     </div>
     </PromptContext.Provider>
+    </FolderColorContext.Provider>
   );
 }

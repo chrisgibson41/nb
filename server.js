@@ -327,6 +327,63 @@ app.get('/api/file', (req, res) => {
   }
 });
 
+// GET /api/export/html?path=  — styled HTML for print-to-PDF
+app.get('/api/export/html', async (req, res) => {
+  try {
+    const filePath = safePath(req.query.path, NOTES_DIR);
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const { marked } = await import('marked');
+    // Strip YAML frontmatter before converting
+    const md = raw.startsWith('---\n')
+      ? raw.slice(raw.indexOf('\n---\n', 4) + 5).trimStart()
+      : raw;
+    const body = await marked.parse(md);
+    const title = path.basename(filePath, '.md');
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${title}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 15px; line-height: 1.75; color: #1a1a1a;
+      max-width: 760px; margin: 48px auto; padding: 0 48px;
+    }
+    h1,h2,h3,h4,h5,h6 { margin: 1.4em 0 0.5em; font-weight: 700; line-height: 1.3; }
+    h1 { font-size: 2em; } h2 { font-size: 1.5em; } h3 { font-size: 1.2em; }
+    p { margin: 0.8em 0; }
+    a { color: #005cc5; }
+    code { background: #f3f3f3; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; font-family: monospace; }
+    pre  { background: #f3f3f3; padding: 16px; border-radius: 4px; overflow-x: auto; margin: 1em 0; }
+    pre code { background: none; padding: 0; }
+    blockquote { border-left: 4px solid #ccc; padding-left: 1em; color: #555; margin: 1em 0; }
+    ul, ol { padding-left: 1.5em; margin: 0.8em 0; }
+    li { margin: 0.3em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: left; }
+    th { background: #f3f3f3; font-weight: 600; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 2em 0; }
+    img { max-width: 100%; }
+    @media print {
+      body { margin: 0; padding: 24px; }
+      @page { margin: 1.5cm; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${body}
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // PUT /api/file
 app.put('/api/file', (req, res) => {
   try {
@@ -337,8 +394,20 @@ app.put('/api/file', (req, res) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(safe, content ?? '', 'utf-8');
     res.json({ success: true, path: safe });
-    // Commit asynchronously — don't block the save response
+    if (req.query.nocommit !== '1') gitCommitFile(safe);  // ← only change
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/git/commit — explicit commit for a single file
+app.post('/api/git/commit', (req, res) => {
+  try {
+    const { path: filePath } = req.body;
+    if (!filePath) return res.status(400).json({ error: 'path required' });
+    const safe = safePath(filePath, NOTES_DIR);
     gitCommitFile(safe);
+    res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

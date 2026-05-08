@@ -4,7 +4,7 @@ import './App.css';
 import FileTree from './components/FileTree.jsx';
 import EditorPane from './components/EditorPane.jsx';
 import TagBar from './components/TagBar.jsx';
-import Toolbar from './components/Toolbar.jsx';
+import CombinedBar from './components/CombinedBar.jsx';
 import TemplateModal from './components/TemplateModal.jsx';
 import ShortcutsPanel from './components/ShortcutsPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
@@ -12,7 +12,6 @@ import HistoryModal from './components/HistoryModal.jsx';
 import ResizablePanel from './components/ResizablePanel.jsx';
 import RightSidebar from './components/RightSidebar.jsx';
 import TasksPanel from './components/TasksPanel.jsx';
-import TabBar from './components/TabBar.jsx';
 import GettingStarted from './components/GettingStarted.jsx';
 
 // In dev, Vite proxies /api → localhost:3001. In production, same origin.
@@ -43,6 +42,7 @@ export default function App() {
   const [templates, setTemplates] = useState([]);
   const wsRef = useRef(null);
   const saveTimerRef = useRef(null);
+  const commitTimerRef = useRef(null);
   const editorRef = useRef(null);
 
   // Load templates once
@@ -84,6 +84,33 @@ export default function App() {
     // effect on the same render cycle gets a chance to read it.
   }, [currentFile]);
 
+  // Save file to server (no git commit — commits are batched separately)
+  const saveFile = useCallback(async (filePath, fileContent) => {
+    if (!filePath) return;
+    try {
+      await fetch(`${API}/api/file?nocommit=1`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath, content: fileContent }),
+      });
+      setSavedContent(fileContent);
+    } catch (err) {
+      console.error('Error saving file:', err);
+    }
+  }, []);
+
+  // Explicit git commit for a single file
+  const commitFile = useCallback(async (filePath) => {
+    if (!filePath) return;
+    try {
+      await fetch(`${API}/api/git/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath }),
+      });
+    } catch { /* silent */ }
+  }, []);
+
   // Load file from server and open/switch to its tab.
   // Opening always reuses the single preview tab unless the file already has
   // a permanent (non-preview) tab open.
@@ -95,6 +122,8 @@ export default function App() {
       setCurrentFile(filePath);
       setContent(text);
       setSavedContent(text);
+      // Commit any unsaved git state for the file we're leaving
+      if (currentFile) commitFile(currentFile);
       setUnsavedPaths(prev => { const n = new Set(prev); n.delete(filePath); return n; });
       setTabs(prev => {
         const existing = prev.find(t => t.path === filePath);
@@ -107,7 +136,7 @@ export default function App() {
     } catch (err) {
       console.error('Error opening file:', err);
     }
-  }, []);
+  }, [currentFile, commitFile]);
 
   // Resolve [[Wiki Link]] note names to file paths via the server
   const handleWikiLink = useCallback(async (noteName) => {
@@ -183,21 +212,6 @@ export default function App() {
     });
   }, [currentFile, openFile]);
 
-  // Save file to server
-  const saveFile = useCallback(async (filePath, fileContent) => {
-    if (!filePath) return;
-    try {
-      await fetch(`${API}/api/file`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, content: fileContent }),
-      });
-      setSavedContent(fileContent);
-    } catch (err) {
-      console.error('Error saving file:', err);
-    }
-  }, []);
-
   // Debounced auto-save on every edit
   const handleContentChange = useCallback((newContent) => {
     setContent(newContent);
@@ -208,15 +222,24 @@ export default function App() {
       saveFile(currentFile, newContent);
       setUnsavedPaths(prev => { const n = new Set(prev); n.delete(currentFile); return n; });
     }, 800);
-  }, [currentFile, saveFile]);
+    if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = setTimeout(() => {
+      commitFile(currentFile);
+    }, 15_000);
+  }, [currentFile, saveFile, commitFile]);
 
-  // Ctrl/Cmd+S — immediate save
+  // Ctrl/Cmd+S — immediate save; Enter — immediate commit
   useEffect(() => {
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveFile(currentFile, content);
+        commitFile(currentFile);
+      }
+      if (e.key === 'Enter' && currentFile) {
+        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        commitFile(currentFile);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 't') {
         e.preventDefault();
@@ -229,7 +252,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentFile, content, saveFile, closeTab]);
+  }, [currentFile, content, saveFile, commitFile, closeTab]);
 
   const isUnsaved = currentFile ? unsavedPaths.has(currentFile) : false;
 
@@ -250,7 +273,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Toolbar
+      <CombinedBar
         isUnsaved={isUnsaved}
         onSave={() => saveFile(currentFile, content)}
         onNewTemplate={() => setShowTemplateModal(true)}
@@ -260,9 +283,6 @@ export default function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         currentFile={currentFile}
-      />
-
-      <TabBar
         tabs={tabs}
         activeTab={currentFile}
         unsavedPaths={unsavedPaths}
