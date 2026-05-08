@@ -868,6 +868,59 @@ function markForType(type) {
   }
 }
 
+// ─── Embed block decorations (StateField — block:true may NOT come from ViewPlugin)
+
+function buildEmbedDecorationsFromState(state) {
+  try {
+    const builder      = new RangeSetBuilder()
+    const fenceBlocks  = parseFenceBlocks(state)
+    const cursorLines  = getCursorLines(state, fenceBlocks)
+
+    // Skip frontmatter lines
+    const fm = parseFrontmatter(state)
+    const fmLines = new Set()
+    if (fm) { for (let n = fm.start; n <= fm.end; n++) fmLines.add(n) }
+
+    // Skip fence content
+    const inFence = new Set()
+    for (const b of fenceBlocks) { for (let n = b.start; n <= b.end; n++) inFence.add(n) }
+
+    for (let lineNum = 1; lineNum <= state.doc.lines; lineNum++) {
+      if (fmLines.has(lineNum) || inFence.has(lineNum) || cursorLines.has(lineNum)) continue
+      const line = state.doc.line(lineNum)
+      const text = line.text
+      let i = 0
+      while (i < text.length) {
+        if (text[i] === '!' && text[i + 1] === '[' && text[i + 2] === '[') {
+          const end = text.indexOf(']]', i + 3)
+          if (end !== -1) {
+            builder.add(
+              line.from + i,
+              line.from + end + 2,
+              Decoration.replace({ widget: new EmbedWidget(text.slice(i + 3, end)), block: true }),
+            )
+            i = end + 2
+            continue
+          }
+        }
+        i++
+      }
+    }
+    return builder.finish()
+  } catch {
+    return new RangeSetBuilder().finish()
+  }
+}
+
+const embedBlockField = StateField.define({
+  create(state)    { return buildEmbedDecorationsFromState(state) },
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildEmbedDecorationsFromState(tr.state)
+    return deco
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+
 // ─── Mermaid block decorations (StateField — only source allowed for block:true)
 // ViewPlugin and EditorView.decorations.of() are both "plugin" sources which
 // CodeMirror forbids from providing block decorations. StateField is required.
@@ -1079,8 +1132,9 @@ function addInline(builder, text, offset) {
   const decs = parseInline(text, offset)
   for (const { from, to, type } of decs) {
     if (type.startsWith('embed:')) {
-      const noteName = type.slice(6)
-      builder.add(from, to, Decoration.replace({ widget: new EmbedWidget(noteName), block: true }))
+      // Block decorations must come from a StateField, never a ViewPlugin.
+      // embedBlockField handles ![[…]] independently — skip here.
+      continue
     } else if (type.startsWith('wiki:')) {
       const noteName = type.slice(5)
       builder.add(from, to, Decoration.replace({ widget: new WikiLinkWidget(noteName) }))
@@ -1145,6 +1199,7 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
 export const livePreviewPlugin = [
   frontmatterBlockField,
   mermaidBlockField,
+  embedBlockField,
   activeMermaidField,
   tableBlockField,
   mermaidScrollListener,
