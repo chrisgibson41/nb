@@ -48,6 +48,7 @@ async function exportToPdf(filePath) {
 // ── Folder color context ──────────────────────────────────────────────────────
 
 const FolderColorContext = createContext(null);
+const SplitContext = createContext(null); // onOpenInSplit callback
 
 const styles = {
   container: {
@@ -376,6 +377,7 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
   // ── All hooks must come before any early return (Rules of Hooks) ────────────
   const showPrompt = useContext(PromptContext);
   const { folderColors, setFolderColor } = useContext(FolderColorContext);
+  const onOpenInSplit = useContext(SplitContext);
 
   // Filter logic — defined before any conditional returns so hook order is stable
   const matchesFilter = useCallback((n, q) => {
@@ -626,6 +628,19 @@ function TreeNode({ node, depth, currentFile, onFileSelect, onRefresh, filterQue
           {!isDir && node.name.endsWith('.md') && (
             <>
               <div style={{ height: '1px', background: '#3c3c3c', margin: '3px 8px' }} />
+              {onOpenInSplit && (
+                <div
+                  style={styles.contextItem}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#37373d')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  onClick={() => { onOpenInSplit(node.path); closeContextMenu(); }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/>
+                  </svg>
+                  Open in Split
+                </div>
+              )}
               <div
                 style={styles.contextItem}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#37373d')}
@@ -765,7 +780,7 @@ function TemplateRow({ template, active, onFileSelect }) {
 
 // ── Main FileTree component ───────────────────────────────────────────────────
 
-export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefresh, onNewTemplate, searchQuery, collapseButton }) {
+export default function FileTree({ onFileSelect, onOpenInSplit, currentFile, refreshKey, onRefresh, onNewTemplate, searchQuery, collapseButton }) {
   const [tree, setTree] = useState(null);
   const [localFilter, setLocalFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -851,6 +866,7 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
   };
 
   return (
+    <SplitContext.Provider value={onOpenInSplit ?? null}>
     <FolderColorContext.Provider value={{ folderColors, setFolderColor }}>
     <PromptContext.Provider value={showPrompt}>
     {promptState && (
@@ -960,5 +976,6 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
     </div>
     </PromptContext.Provider>
     </FolderColorContext.Provider>
+    </SplitContext.Provider>
   );
 }

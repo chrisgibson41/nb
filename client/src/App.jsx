@@ -17,6 +17,15 @@ import GettingStarted from './components/GettingStarted.jsx';
 // In dev, Vite proxies /api → localhost:3001. In production, same origin.
 const API = '';
 
+// Thin header shown above each pane in split-view mode
+const paneHeaderStyle = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  padding: '0 10px', height: 26, flexShrink: 0,
+  background: '#252526', borderBottom: '1px solid #2e2e2e',
+  fontSize: 11, color: '#888', fontFamily: 'system-ui, sans-serif',
+  WebkitAppRegion: 'no-drag',
+};
+
 export default function App() {
   const [currentFile, setCurrentFile] = useState(null);
   const [content, setContent] = useState('');
@@ -40,6 +49,18 @@ export default function App() {
   });
   const [unsavedPaths, setUnsavedPaths] = useState(new Set());
   const [templates, setTemplates] = useState([]);
+  // ── Split pane ──────────────────────────────────────────────────────────────
+  const [splitPane, setSplitPane]   = useState(null); // null | { filePath, content, savedContent }
+  const [splitUnsaved, setSplitUnsaved] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(() => {
+    try { return parseFloat(localStorage.getItem('nb:split:ratio') || '0.5'); } catch { return 0.5; }
+  });
+  const splitEditorRef    = useRef(null);
+  const splitFileRef      = useRef(null);   // stable ref so timers read the latest filePath
+  const splitSaveTimer    = useRef(null);
+  const splitCommitTimer  = useRef(null);
+  const splitDragRef      = useRef(null);
+
   const wsRef = useRef(null);
   const saveTimerRef = useRef(null);
   const commitTimerRef = useRef(null);
@@ -212,6 +233,71 @@ export default function App() {
     });
   }, [currentFile, openFile]);
 
+  // ── Split pane helpers ───────────────────────────────────────────────────────
+
+  // Keep the ref in sync so timers can access the latest path without stale closures
+  useEffect(() => { splitFileRef.current = splitPane?.filePath ?? null; }, [splitPane?.filePath]);
+  useEffect(() => {
+    try { localStorage.setItem('nb:split:ratio', String(splitRatio)); } catch { /* ignore */ }
+  }, [splitRatio]);
+
+  const openInSplit = useCallback(async (filePath) => {
+    try {
+      const res = await fetch(`${API}/api/file?path=${encodeURIComponent(filePath)}`);
+      if (!res.ok) throw new Error('Failed to load');
+      const text = await res.text();
+      setSplitPane({ filePath, content: text, savedContent: text });
+      setSplitUnsaved(false);
+    } catch (err) { console.error('Split pane load error:', err); }
+  }, []);
+
+  const handleSplitChange = useCallback((newContent) => {
+    setSplitPane(prev => prev ? { ...prev, content: newContent } : null);
+    setSplitUnsaved(true);
+    if (splitSaveTimer.current) clearTimeout(splitSaveTimer.current);
+    splitSaveTimer.current = setTimeout(() => {
+      const fp = splitFileRef.current;
+      if (fp) { saveFile(fp, newContent); setSplitUnsaved(false); }
+    }, 800);
+    if (splitCommitTimer.current) clearTimeout(splitCommitTimer.current);
+    splitCommitTimer.current = setTimeout(() => {
+      const fp = splitFileRef.current;
+      if (fp) commitFile(fp);
+    }, 15_000);
+  }, [saveFile, commitFile]);
+
+  const closeSplit = useCallback(() => {
+    clearTimeout(splitSaveTimer.current);
+    clearTimeout(splitCommitTimer.current);
+    const fp = splitFileRef.current;
+    if (fp) commitFile(fp);
+    setSplitPane(null);
+    setSplitUnsaved(false);
+  }, [commitFile]);
+
+  const onSplitDragStart = useCallback((e) => {
+    e.preventDefault();
+    const container = e.currentTarget.closest('.split-panes');
+    if (!container) return;
+    const totalW = container.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const startRatio = splitRatio;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = (mv) => {
+      const newRatio = Math.max(0.2, Math.min(0.8, startRatio + (mv.clientX - startX) / totalW));
+      setSplitRatio(newRatio);
+    };
+    const up = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }, [splitRatio]);
+
   // Debounced auto-save on every edit
   const handleContentChange = useCallback((newContent) => {
     setContent(newContent);
@@ -305,6 +391,7 @@ export default function App() {
             <div className="sidebar" style={{ width: '100%', flex: 1 }}>
               <FileTree
                 onFileSelect={openFile}
+                onOpenInSplit={openInSplit}
                 currentFile={currentFile}
                 refreshKey={treeRefreshKey}
                 onRefresh={() => setTreeRefreshKey((k) => k + 1)}
@@ -329,13 +416,64 @@ export default function App() {
           {currentFile ? (
             <div className="editor-area">
               <div className="editor-with-outline">
-                <EditorPane
-                  ref={editorRef}
-                  content={content}
-                  onChange={handleContentChange}
-                  filePath={currentFile}
-                  onWikiLink={handleWikiLink}
-                />
+                {/* ── Split panes container ─────────────────────────── */}
+                <div className="split-panes" style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}>
+                  {/* Primary pane */}
+                  <div style={{ flex: splitPane ? `0 0 ${splitRatio * 100}%` : 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+                    {splitPane && (
+                      <div style={paneHeaderStyle}>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {currentFile?.split('/').pop()}
+                        </span>
+                        {unsavedPaths.has(currentFile) && <span style={{ color: '#e5c07b', fontSize: 8 }}>●</span>}
+                      </div>
+                    )}
+                    <EditorPane
+                      ref={editorRef}
+                      content={content}
+                      onChange={handleContentChange}
+                      filePath={currentFile}
+                      onWikiLink={handleWikiLink}
+                    />
+                  </div>
+
+                  {/* Split pane */}
+                  {splitPane && (
+                    <>
+                      <div
+                        onMouseDown={onSplitDragStart}
+                        style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', borderLeft: '1px solid #2e2e2e', transition: 'background 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                      />
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+                        <div style={{ ...paneHeaderStyle, justifyContent: 'space-between' }}>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {splitPane.filePath.split('/').pop()}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            {splitUnsaved && <span style={{ color: '#e5c07b', fontSize: 8 }}>●</span>}
+                            <button
+                              onClick={closeSplit}
+                              title="Close split"
+                              style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: '0 2px', fontSize: 14, lineHeight: 1 }}
+                              onMouseEnter={e => { e.currentTarget.style.color = '#ccc'; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = '#666'; }}
+                            >✕</button>
+                          </div>
+                        </div>
+                        <EditorPane
+                          ref={splitEditorRef}
+                          content={splitPane.content}
+                          onChange={handleSplitChange}
+                          filePath={splitPane.filePath}
+                          onWikiLink={handleWikiLink}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <ResizablePanel
                   storageKey="nb:panel:right"
                   defaultWidth={220}
@@ -352,7 +490,7 @@ export default function App() {
                     />
                   )}
                 </ResizablePanel>
-              </div>
+              </div> {/* editor-with-outline */}
               <TagBar content={content} setContent={handleContentChange} />
             </div>
           ) : showGettingStarted ? (
