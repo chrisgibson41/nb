@@ -72,7 +72,7 @@ const S = {
   },
 };
 
-export default function BacklinksPanel({ currentFile, onFileSelect, collapseButton }) {
+export default function BacklinksPanel({ currentFile, onFileSelect, collapseButton, collapsed }) {
   const [links, setLinks]   = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -99,25 +99,27 @@ export default function BacklinksPanel({ currentFile, onFileSelect, collapseButt
         {collapseButton}
       </div>
 
-      <div style={S.scroll}>
-        {!currentFile && <div style={S.empty}>Open a note to see backlinks.</div>}
-        {currentFile && loading && <div style={S.empty}>Scanning…</div>}
-        {currentFile && !loading && links.length === 0 && (
-          <div style={S.empty}>No notes link to this one yet.</div>
-        )}
-        {!loading && links.map(link => (
-          <div
-            key={link.path}
-            style={S.item}
-            onClick={() => onFileSelect(link.path)}
-            onMouseEnter={e => { e.currentTarget.style.background = '#2a2d2e'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-          >
-            <div style={S.itemName} title={link.name}>{link.name}</div>
-            {link.excerpt && <div style={S.itemExcerpt}>{link.excerpt}</div>}
-          </div>
-        ))}
-      </div>
+      {!collapsed && (
+        <div style={S.scroll}>
+          {!currentFile && <div style={S.empty}>Open a note to see backlinks.</div>}
+          {currentFile && loading && <div style={S.empty}>Scanning…</div>}
+          {currentFile && !loading && links.length === 0 && (
+            <div style={S.empty}>No notes link to this one yet.</div>
+          )}
+          {!loading && links.map(link => (
+            <div
+              key={link.path}
+              style={S.item}
+              onClick={() => onFileSelect(link.path)}
+              onMouseEnter={e => { e.currentTarget.style.background = '#2a2d2e'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <div style={S.itemName} title={link.name}>{link.name}</div>
+              {link.excerpt && <div style={S.itemExcerpt}>{link.excerpt}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

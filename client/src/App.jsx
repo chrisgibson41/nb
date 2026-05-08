@@ -9,9 +9,8 @@ import TemplateModal from './components/TemplateModal.jsx';
 import ShortcutsPanel from './components/ShortcutsPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
-import OutlinePanel from './components/OutlinePanel.jsx';
-import BacklinksPanel from './components/BacklinksPanel.jsx';
 import ResizablePanel from './components/ResizablePanel.jsx';
+import RightSidebar from './components/RightSidebar.jsx';
 import TasksPanel from './components/TasksPanel.jsx';
 import TabBar from './components/TabBar.jsx';
 import GettingStarted from './components/GettingStarted.jsx';
@@ -318,32 +317,18 @@ export default function App() {
                   onWikiLink={handleWikiLink}
                 />
                 <ResizablePanel
-                  storageKey="nb:panel:outline"
-                  defaultWidth={170}
-                  minWidth={100}
+                  storageKey="nb:panel:right"
+                  defaultWidth={220}
+                  minWidth={150}
                   position="right"
-                  label="Outline"
+                  label="Panels"
                 >
-                  {({ collapseButton }) => (
-                    <OutlinePanel
+                  {() => (
+                    <RightSidebar
                       content={content}
-                      onScrollTo={text => editorRef.current?.scrollToText(text)}
-                      collapseButton={collapseButton}
-                    />
-                  )}
-                </ResizablePanel>
-                <ResizablePanel
-                  storageKey="nb:panel:backlinks"
-                  defaultWidth={180}
-                  minWidth={100}
-                  position="right"
-                  label="Backlinks"
-                >
-                  {({ collapseButton }) => (
-                    <BacklinksPanel
                       currentFile={currentFile}
+                      onScrollTo={text => editorRef.current?.scrollToText(text)}
                       onFileSelect={openFile}
-                      collapseButton={collapseButton}
                     />
                   )}
                 </ResizablePanel>

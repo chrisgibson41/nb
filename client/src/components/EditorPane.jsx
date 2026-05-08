@@ -44,7 +44,7 @@ const baseTheme = EditorView.theme({
   '.cm-activeLine':   { background: 'rgba(255,255,255,0.03)' },
 })
 
-function createEditorState(doc, onChange, onMermaidChange) {
+function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
   return EditorState.create({
     doc,
     extensions: [
@@ -73,6 +73,11 @@ function createEditorState(doc, onChange, onMermaidChange) {
         if (update.docChanged || update.selectionSet) {
           const code = update.state.field(activeMermaidField, false)
           onMermaidChange(code ?? null)
+          if (code !== null) {
+            onFocusLine(update.state.doc.lineAt(update.state.selection.main.head).text)
+          } else {
+            onFocusLine(null)
+          }
         }
       }),
     ],
@@ -109,14 +114,17 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
   const onChangeRef       = useRef(onChange)
   const onWikiLinkRef     = useRef(onWikiLink)
   const [activeMermaid, setActiveMermaid]     = useState(null)
+  const [mermaidFocusLine, setMermaidFocusLine] = useState(null)
   const [previewWidth, setPreviewWidth]       = useState(loadPreviewWidth)
   const [previewCollapsed, setPreviewCollapsed] = useState(loadPreviewCollapsed)
   const setMermaidRef     = useRef(setActiveMermaid)
+  const focusLineRef      = useRef(setMermaidFocusLine)
   const dragRef           = useRef(null)  // { startX, startWidth } during resize
 
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
   useEffect(() => { onWikiLinkRef.current = onWikiLink }, [onWikiLink])
   useEffect(() => { setMermaidRef.current = setActiveMermaid }, [])
+  useEffect(() => { focusLineRef.current = setMermaidFocusLine }, [])
 
   // Listen for wiki-link click events dispatched by WikiLinkWidget
   useEffect(() => {
@@ -152,6 +160,7 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
         content ?? '',
         val  => onChangeRef.current(val),
         code => setMermaidRef.current(code),
+        code => focusLineRef.current(code),
       ),
       parent: containerRef.current,
     })
@@ -238,6 +247,7 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
             code={activeMermaid}
             width={previewWidth}
             collapsed={previewCollapsed}
+            focusText={mermaidFocusLine}
             onToggleCollapse={() => {
               setPreviewCollapsed(c => {
                 const next = !c

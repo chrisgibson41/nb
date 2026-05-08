@@ -137,7 +137,7 @@ function ZoomBtn({ onClick, title, children }) {
   )
 }
 
-export default function MermaidPreview({ code, width = 400, collapsed = false, onToggleCollapse }) {
+export default function MermaidPreview({ code, width = 400, collapsed = false, focusText = null, onToggleCollapse }) {
   const [lastValidSvg, setLastValidSvg] = useState(null)
   const [invalid, setInvalid]           = useState(false)
   const [loading, setLoading]           = useState(true)
@@ -271,6 +271,53 @@ export default function MermaidPreview({ code, width = 400, collapsed = false, o
     applyTransform()
     setZoomPct(Math.round(newZoom * 100))
   }, [applyTransform])
+
+  // ── Focus-sync: pan to the SVG element matching the cursor line ─────────────
+  const panToElement = useCallback((el) => {
+    if (!bodyRef.current || !el) return
+    const bodyRect = bodyRef.current.getBoundingClientRect()
+    const elemRect = el.getBoundingClientRect()
+    const elemCX = elemRect.left + elemRect.width  / 2 - bodyRect.left
+    const elemCY = elemRect.top  + elemRect.height / 2 - bodyRect.top
+    viewRef.current.x += bodyRect.width  / 2 - elemCX
+    viewRef.current.y += bodyRect.height / 2 - elemCY
+    applyTransform()
+  }, [applyTransform])
+
+  useEffect(() => {
+    if (!focusText || !bodyRef.current) return
+    const svg = bodyRef.current.querySelector('svg')
+    if (!svg) return
+
+    // Extract search terms in priority order
+    const terms = []
+    // 1. Text after ':'  (sequence diagram messages)
+    const afterColon = focusText.match(/:\s*(.+)/)
+    if (afterColon) terms.push(afterColon[1].trim())
+    // 2. Text inside brackets (flowchart labels)
+    const inBrackets = focusText.match(/[\[{(]([^\]})]+)[\]})]/g)
+    if (inBrackets) inBrackets.forEach(m => terms.push(m.slice(1, -1).trim()))
+    // 3. Participant / node names around arrows
+    const arrowParts = focusText.split(/-->|->|==>|--/)
+    arrowParts.forEach(p => { const t = p.trim(); if (t) terms.push(t) })
+    // 4. Fallback: the whole trimmed line
+    const trimmed = focusText.trim()
+    if (trimmed) terms.push(trimmed)
+
+    const nodes = Array.from(svg.querySelectorAll('text, tspan'))
+    let matched = null
+    for (const term of terms) {
+      if (!term) continue
+      const lower = term.toLowerCase()
+      matched = nodes.find(n => n.textContent.toLowerCase().includes(lower))
+      if (matched) break
+    }
+    if (!matched) return
+
+    panToElement(matched)
+    matched.style.outline = '2px solid rgba(0,122,204,0.8)'
+    setTimeout(() => { matched.style.outline = '' }, 1200)
+  }, [focusText, panToElement])
 
   const dotColor = loading ? '#555' : invalid ? '#e5c07b' : '#4ec9a2'
 

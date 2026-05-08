@@ -22,7 +22,7 @@ function headingStyle(level) {
   return { fontSize: '11px', color: '#888', fontWeight: 400 };
 }
 
-export default function OutlinePanel({ content, onScrollTo, collapseButton }) {
+export default function OutlinePanel({ content, onScrollTo, collapseButton, collapsed }) {
   const headings = parseHeadings(content);
 
   return (
@@ -53,37 +53,39 @@ export default function OutlinePanel({ content, onScrollTo, collapseButton }) {
         {collapseButton}
       </div>
 
-      {/* Body */}
-      <div style={{ overflowY: 'auto', flex: 1 }}>
-        {headings.length === 0 ? (
-          <div style={{ padding: '12px 10px', fontSize: '11px', color: '#444', lineHeight: 1.5 }}>
-            No headings yet.
-          </div>
-        ) : headings.map((h, i) => (
-          <div
-            key={i}
-            style={{
-              paddingLeft: `${10 + (h.level - 1) * 10}px`,
-              paddingRight: '8px',
-              paddingTop: '3px',
-              paddingBottom: '3px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              borderRadius: '3px',
-              margin: '0 4px',
-              ...headingStyle(h.level),
-            }}
-            title={h.text}
-            onClick={() => onScrollTo?.(h.text)}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          >
-            {h.text}
-          </div>
-        ))}
-      </div>
+      {/* Body — omitted when collapsed */}
+      {!collapsed && (
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {headings.length === 0 ? (
+            <div style={{ padding: '12px 10px', fontSize: '11px', color: '#444', lineHeight: 1.5 }}>
+              No headings yet.
+            </div>
+          ) : headings.map((h, i) => (
+            <div
+              key={i}
+              style={{
+                paddingLeft: `${10 + (h.level - 1) * 10}px`,
+                paddingRight: '8px',
+                paddingTop: '3px',
+                paddingBottom: '3px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                borderRadius: '3px',
+                margin: '0 4px',
+                ...headingStyle(h.level),
+              }}
+              title={h.text}
+              onClick={() => onScrollTo?.(h.text)}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              {h.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
