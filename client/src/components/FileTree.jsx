@@ -671,7 +671,7 @@ function TemplateRow({ template, active, onFileSelect }) {
 
 // ── Main FileTree component ───────────────────────────────────────────────────
 
-export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefresh, onNewTemplate, searchQuery }) {
+export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefresh, onNewTemplate, searchQuery, collapseButton }) {
   const [tree, setTree] = useState(null);
   const [localFilter, setLocalFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -756,7 +756,8 @@ export default function FileTree({ onFileSelect, currentFile, refreshKey, onRefr
       <div style={styles.header}>
         <div style={styles.headerRow}>
           <span style={styles.sectionTitle}>Explorer</span>
-          <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {collapseButton}
             {/* New file */}
             <button style={styles.iconBtn} title="New note" onClick={handleNewFile}
               onMouseEnter={e => { e.currentTarget.style.background = '#3c3c3c'; e.currentTarget.style.color = '#cccccc'; }}

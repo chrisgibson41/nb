@@ -4,8 +4,8 @@ const API = '';
 
 const S = {
   panel: {
-    width: '180px',
-    flexShrink: 0,
+    width: '100%',
+    flex: 1,
     borderLeft: '1px solid #2e2e2e',
     display: 'flex',
     flexDirection: 'column',
@@ -15,7 +15,7 @@ const S = {
     overflow: 'hidden',
   },
   header: {
-    padding: '8px 10px 6px',
+    padding: '6px 8px 6px 10px',
     fontSize: '10px',
     fontWeight: 700,
     letterSpacing: '0.08em',
@@ -72,7 +72,7 @@ const S = {
   },
 };
 
-export default function BacklinksPanel({ currentFile, onFileSelect }) {
+export default function BacklinksPanel({ currentFile, onFileSelect, collapseButton }) {
   const [links, setLinks]   = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -86,8 +86,6 @@ export default function BacklinksPanel({ currentFile, onFileSelect }) {
       .catch(() => { setLinks([]); setLoading(false); });
   }, [currentFile]);
 
-  if (!currentFile) return null;
-
   return (
     <div style={S.panel}>
       <div style={S.header}>
@@ -97,11 +95,14 @@ export default function BacklinksPanel({ currentFile, onFileSelect }) {
         </svg>
         Backlinks
         {links.length > 0 && <span style={S.count}>{links.length}</span>}
+        <div style={{ flex: 1 }} />
+        {collapseButton}
       </div>
 
       <div style={S.scroll}>
-        {loading && <div style={S.empty}>Scanning…</div>}
-        {!loading && links.length === 0 && (
+        {!currentFile && <div style={S.empty}>Open a note to see backlinks.</div>}
+        {currentFile && loading && <div style={S.empty}>Scanning…</div>}
+        {currentFile && !loading && links.length === 0 && (
           <div style={S.empty}>No notes link to this one yet.</div>
         )}
         {!loading && links.map(link => (

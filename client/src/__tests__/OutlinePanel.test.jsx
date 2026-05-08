@@ -5,16 +5,17 @@ import OutlinePanel from '../components/OutlinePanel';
 
 describe('OutlinePanel', () => {
   describe('visibility', () => {
-    it('renders nothing with empty content', () => {
-      const { container } = render(<OutlinePanel content="" onScrollTo={vi.fn()} />);
-      expect(container.firstChild).toBeNull();
+    it('renders the panel shell (with empty state) when content has no headings', () => {
+      render(<OutlinePanel content="" onScrollTo={vi.fn()} />);
+      expect(screen.getByText('Outline')).toBeInTheDocument();
+      expect(screen.getByText(/No headings/i)).toBeInTheDocument();
     });
 
-    it('renders nothing with only one heading', () => {
-      const { container } = render(
-        <OutlinePanel content="# Only Heading" onScrollTo={vi.fn()} />
-      );
-      expect(container.firstChild).toBeNull();
+    it('renders the panel shell (with empty state) with only one heading', () => {
+      render(<OutlinePanel content="# Only Heading" onScrollTo={vi.fn()} />);
+      expect(screen.getByText('Outline')).toBeInTheDocument();
+      // Single heading still shows in outline (no min-heading threshold any more)
+      expect(screen.getByText('Only Heading')).toBeInTheDocument();
     });
 
     it('renders with two or more headings', () => {

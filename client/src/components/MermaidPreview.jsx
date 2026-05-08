@@ -56,8 +56,8 @@ const s = {
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '8px 14px',
+    gap: '6px',
+    padding: '6px 8px 6px 14px',
     borderBottom: '1px solid #2e2e2e',
     fontSize: '11px',
     fontWeight: 600,
@@ -110,7 +110,7 @@ const s = {
   },
 }
 
-export default function MermaidPreview({ code, width = 400 }) {
+export default function MermaidPreview({ code, width = 400, collapsed = false, onToggleCollapse }) {
   const [lastValidSvg, setLastValidSvg] = useState(null)  // never wiped on error
   const [invalid, setInvalid]           = useState(false)  // true while syntax is broken
   const [loading, setLoading]           = useState(true)
@@ -158,11 +158,64 @@ export default function MermaidPreview({ code, width = 400 }) {
 
   const dotColor = loading ? '#555' : invalid ? '#e5c07b' : '#4ec9a2'
 
+  // ── Collapsed strip ──────────────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <div style={{ width: '24px', flexShrink: 0, display: 'flex',
+                    flexDirection: 'column', alignItems: 'center',
+                    background: '#1a1a1a', borderLeft: '1px solid #2e2e2e', overflow: 'hidden' }}>
+        <button
+          onClick={onToggleCollapse}
+          title="Expand diagram preview"
+          style={{ background: 'none', border: 'none', cursor: 'pointer',
+                   color: '#555', padding: '6px 0', lineHeight: 1,
+                   display: 'flex', alignItems: 'center' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#999' }}
+          onMouseLeave={e => { e.currentTarget.style.color = '#555' }}
+        >
+          {/* left-pointing chevron (expand from right) */}
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
+               stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="8,2 4,6 8,10" />
+          </svg>
+        </button>
+        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+                      fontSize: '10px', fontWeight: 700, color: '#444',
+                      letterSpacing: '0.1em', textTransform: 'uppercase',
+                      marginTop: '8px', cursor: 'pointer', userSelect: 'none' }}
+             onClick={onToggleCollapse}
+             onMouseEnter={e => { e.currentTarget.style.color = '#888' }}
+             onMouseLeave={e => { e.currentTarget.style.color = '#444' }}>
+          Preview
+        </div>
+        <span style={{ ...s.dot(dotColor), marginTop: '8px' }} />
+      </div>
+    )
+  }
+
+  // ── Expanded ─────────────────────────────────────────────────────────────
   return (
     <div style={{ ...s.panel, width: `${width}px`, minWidth: '200px' }}>
       <div style={s.header}>
         <span style={s.dot(dotColor)} />
-        Diagram preview
+        <span style={{ flex: 1 }}>Diagram preview</span>
+        {/* Collapse button */}
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            title="Collapse diagram preview"
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+                     color: '#555', padding: '2px 0 2px 6px', lineHeight: 1,
+                     display: 'flex', alignItems: 'center' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#999' }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#555' }}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
+                 stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4,2 8,6 4,10" />
+            </svg>
+          </button>
+        )}
       </div>
       <div
         ref={bodyRef}

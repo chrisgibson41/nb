@@ -82,6 +82,7 @@ function createEditorState(doc, onChange, onMermaidChange) {
 const PREVIEW_MIN     = 200
 const PREVIEW_DEFAULT = 400
 const STORAGE_KEY     = 'nb:mermaidPreviewWidth'
+const COLLAPSED_KEY   = 'nb:mermaidPreviewCollapsed'
 
 function loadPreviewWidth() {
   try {
@@ -98,13 +99,18 @@ function savePreviewWidth(w) {
   try { localStorage.setItem(STORAGE_KEY, String(w)) } catch { /* ignore */ }
 }
 
+function loadPreviewCollapsed() {
+  try { return localStorage.getItem(COLLAPSED_KEY) === '1' } catch { return false }
+}
+
 const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath, onWikiLink }, ref) {
   const containerRef      = useRef(null)
   const viewRef           = useRef(null)
   const onChangeRef       = useRef(onChange)
   const onWikiLinkRef     = useRef(onWikiLink)
-  const [activeMermaid, setActiveMermaid] = useState(null)
-  const [previewWidth, setPreviewWidth]   = useState(loadPreviewWidth)
+  const [activeMermaid, setActiveMermaid]     = useState(null)
+  const [previewWidth, setPreviewWidth]       = useState(loadPreviewWidth)
+  const [previewCollapsed, setPreviewCollapsed] = useState(loadPreviewCollapsed)
   const setMermaidRef     = useRef(setActiveMermaid)
   const dragRef           = useRef(null)  // { startX, startWidth } during resize
 
@@ -190,7 +196,9 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
     }
 
     const onMouseUp = () => {
-      if (dragRef.current?.lastWidth !== undefined) savePreviewWidth(dragRef.current.lastWidth)
+      if (dragRef.current?.lastWidth !== undefined) {
+      savePreviewWidth(dragRef.current.lastWidth)
+    }
       dragRef.current = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
@@ -209,22 +217,35 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
       <div ref={containerRef} className="cm-host" style={{ flex: 1, minWidth: 0 }} />
       {activeMermaid !== null && (
         <>
-          {/* Drag handle */}
-          <div
-            onMouseDown={onResizeMouseDown}
-            style={{
-              width: '5px',
-              flexShrink: 0,
-              cursor: 'col-resize',
-              background: 'transparent',
-              borderLeft: '1px solid #2e2e2e',
-              transition: 'background 0.15s',
+          {/* Drag handle — only visible when preview is expanded */}
+          {!previewCollapsed && (
+            <div
+              onMouseDown={onResizeMouseDown}
+              style={{
+                width: '5px',
+                flexShrink: 0,
+                cursor: 'col-resize',
+                background: 'transparent',
+                borderLeft: '1px solid #2e2e2e',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              title="Drag to resize preview"
+            />
+          )}
+          <MermaidPreview
+            code={activeMermaid}
+            width={previewWidth}
+            collapsed={previewCollapsed}
+            onToggleCollapse={() => {
+              setPreviewCollapsed(c => {
+                const next = !c
+                try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0') } catch { /* ignore */ }
+                return next
+              })
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            title="Drag to resize preview"
           />
-          <MermaidPreview code={activeMermaid} width={previewWidth} />
         </>
       )}
     </div>

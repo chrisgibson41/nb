@@ -11,6 +11,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import HistoryModal from './components/HistoryModal.jsx';
 import OutlinePanel from './components/OutlinePanel.jsx';
 import BacklinksPanel from './components/BacklinksPanel.jsx';
+import ResizablePanel from './components/ResizablePanel.jsx';
 import TasksPanel from './components/TasksPanel.jsx';
 import TabBar from './components/TabBar.jsx';
 import GettingStarted from './components/GettingStarted.jsx';
@@ -274,16 +275,27 @@ export default function App() {
       />
 
       <div className="app-body">
-        <div className="sidebar">
-          <FileTree
-            onFileSelect={openFile}
-            currentFile={currentFile}
-            refreshKey={treeRefreshKey}
-            onRefresh={() => setTreeRefreshKey((k) => k + 1)}
-            onNewTemplate={() => setShowTemplateModal(true)}
-            searchQuery={searchQuery}
-          />
-        </div>
+        <ResizablePanel
+          storageKey="nb:panel:sidebar"
+          defaultWidth={240}
+          minWidth={140}
+          position="left"
+          label="Explorer"
+        >
+          {({ collapseButton }) => (
+            <div className="sidebar" style={{ width: '100%', flex: 1 }}>
+              <FileTree
+                onFileSelect={openFile}
+                currentFile={currentFile}
+                refreshKey={treeRefreshKey}
+                onRefresh={() => setTreeRefreshKey((k) => k + 1)}
+                onNewTemplate={() => setShowTemplateModal(true)}
+                searchQuery={searchQuery}
+                collapseButton={collapseButton}
+              />
+            </div>
+          )}
+        </ResizablePanel>
 
         <div className="main-area">
           {currentFile && (
@@ -305,14 +317,36 @@ export default function App() {
                   filePath={currentFile}
                   onWikiLink={handleWikiLink}
                 />
-                <OutlinePanel
-                  content={content}
-                  onScrollTo={text => editorRef.current?.scrollToText(text)}
-                />
-                <BacklinksPanel
-                  currentFile={currentFile}
-                  onFileSelect={openFile}
-                />
+                <ResizablePanel
+                  storageKey="nb:panel:outline"
+                  defaultWidth={170}
+                  minWidth={100}
+                  position="right"
+                  label="Outline"
+                >
+                  {({ collapseButton }) => (
+                    <OutlinePanel
+                      content={content}
+                      onScrollTo={text => editorRef.current?.scrollToText(text)}
+                      collapseButton={collapseButton}
+                    />
+                  )}
+                </ResizablePanel>
+                <ResizablePanel
+                  storageKey="nb:panel:backlinks"
+                  defaultWidth={180}
+                  minWidth={100}
+                  position="right"
+                  label="Backlinks"
+                >
+                  {({ collapseButton }) => (
+                    <BacklinksPanel
+                      currentFile={currentFile}
+                      onFileSelect={openFile}
+                      collapseButton={collapseButton}
+                    />
+                  )}
+                </ResizablePanel>
               </div>
               <TagBar content={content} setContent={handleContentChange} />
             </div>
