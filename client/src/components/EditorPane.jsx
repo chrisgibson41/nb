@@ -29,8 +29,6 @@ const baseTheme = EditorView.theme({
     overflowY: 'auto',
   },
   '.cm-content': {
-    maxWidth: '760px',
-    margin: '0 auto',
     padding: '0 48px',
     caretColor: '#aeafad',
   },
