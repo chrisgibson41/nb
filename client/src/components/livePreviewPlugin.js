@@ -485,7 +485,7 @@ function detectTables(state) {
     const isTableLine = /^\s*\|/.test(text) && text.includes('|')
     if (isTableLine) {
       if (tableStart === -1) tableStart = n
-      tableLines.push({ lineNum: n, from: line.from, to: line.to, row: parseTableRow(text) })
+      tableLines.push({ lineNum: n, from: line.from, to: line.to, text, row: parseTableRow(text) })
     } else {
       if (tableStart !== -1 && tableLines.length >= 2) {
         tables.push({ start: tableStart, end: tableLines[tableLines.length - 1].lineNum, lines: tableLines })
@@ -519,15 +519,59 @@ class TableWidget extends WidgetType {
   eq(other) { return other._key === this._key }
 
   toDOM(view) {
+    const tableLines = this.tableLines
+    const numCols = tableLines.find(l => !l.row.isSeparator)?.row.cells.length ?? 1
+
+    // Compute absolute positions of each cell's content start within a line
+    const cellPositions = (line) => {
+      const t = line.text
+      const starts = []
+      for (let i = 0; i < t.length; i++) {
+        if (t[i] === '|') {
+          starts.push(line.from + i + 1 + (t[i + 1] === ' ' ? 1 : 0))
+        }
+      }
+      return starts.slice(0, -1) // drop trailing pipe
+    }
+
+    // Insert a new empty row before tableLines[lineIdx]
+    const insertRowBefore = (lineIdx) => {
+      const newRow = '| ' + Array(numCols).fill('   ').join(' | ') + ' |'
+      const pos = tableLines[lineIdx].from
+      view.dispatch({
+        changes: { from: pos, to: pos, insert: newRow + '\n' },
+        selection: { anchor: pos + 2 },
+        userEvent: 'input',
+      })
+      view.focus()
+    }
+
+    // Append an empty row at the end of the table
+    const appendRow = () => {
+      const last = tableLines[tableLines.length - 1]
+      const newRow = '| ' + Array(numCols).fill('   ').join(' | ') + ' |'
+      view.dispatch({
+        changes: { from: last.to, to: last.to, insert: '\n' + newRow },
+        selection: { anchor: last.to + 3 },
+        userEvent: 'input',
+      })
+      view.focus()
+    }
+
+    // Insert an empty column before colIdx (0-based)
+    const insertColumnBefore = (colIdx) => {
+      const changes = tableLines.map(line => {
+        const cells = [...line.row.cells]
+        cells.splice(colIdx, 0, line.row.isSeparator ? '---' : '   ')
+        return { from: line.from, to: line.to, insert: '| ' + cells.join(' | ') + ' |' }
+      })
+      view.dispatch({ changes, userEvent: 'input' })
+      view.focus()
+    }
+
+    // ── DOM ────────────────────────────────────────────────────
     const wrap = document.createElement('div')
     wrap.className = 'cm-md-table-wrap'
-
-    wrap.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return
-      e.preventDefault()
-      view.dispatch({ selection: { anchor: this.blockFrom }, userEvent: 'select' })
-      view.focus()
-    })
 
     const table = document.createElement('table')
     table.className = 'cm-md-table'
@@ -536,18 +580,107 @@ class TableWidget extends WidgetType {
     table.appendChild(thead)
     table.appendChild(tbody)
 
+    // ── Column-insert button row (top of thead) ────────────────
+    const colBtnRow = document.createElement('tr')
+    colBtnRow.className = 'cm-md-col-btn-row'
+    // Corner cell aligns with the row-button column
+    const corner = document.createElement('th')
+    corner.className = 'cm-md-ctrl-cell'
+    colBtnRow.appendChild(corner)
+    for (let c = 0; c < numCols; c++) {
+      const th = document.createElement('th')
+      th.className = 'cm-md-ctrl-cell cm-md-col-btn-cell'
+      const btn = document.createElement('button')
+      btn.className = 'cm-md-insert-btn'
+      btn.title = 'Insert column here'
+      btn.textContent = '+'
+      const ci = c
+      btn.addEventListener('mousedown', e => e.preventDefault())
+      btn.addEventListener('click', e => { e.stopPropagation(); insertColumnBefore(ci) })
+      th.appendChild(btn)
+      colBtnRow.appendChild(th)
+    }
+    // "Add column at end" button
+    const addColEndTh = document.createElement('th')
+    addColEndTh.className = 'cm-md-ctrl-cell cm-md-col-btn-cell'
+    const addColEndBtn = document.createElement('button')
+    addColEndBtn.className = 'cm-md-insert-btn cm-md-insert-btn-end'
+    addColEndBtn.title = 'Add column'
+    addColEndBtn.textContent = '+'
+    addColEndBtn.addEventListener('mousedown', e => e.preventDefault())
+    addColEndBtn.addEventListener('click', e => { e.stopPropagation(); insertColumnBefore(numCols) })
+    addColEndTh.appendChild(addColEndBtn)
+    colBtnRow.appendChild(addColEndTh)
+    thead.appendChild(colBtnRow)
+
+    // ── Data rows ─────────────────────────────────────────────
     let headerDone = false
-    for (const { row } of this.tableLines) {
-      if (row.isSeparator) { headerDone = true; continue }
+    tableLines.forEach((line, lineIdx) => {
+      if (line.row.isSeparator) { headerDone = true; return }
       const tr = document.createElement('tr')
-      for (const cell of row.cells) {
-        const td = document.createElement(!headerDone ? 'th' : 'td')
-        td.innerHTML = simpleInlineHtml(cell)
-        tr.appendChild(td)
+      const tag = !headerDone ? 'th' : 'td'
+
+      // Row-insert button cell (first column)
+      const rowBtnCell = document.createElement(tag)
+      rowBtnCell.className = 'cm-md-ctrl-cell cm-md-row-btn-cell'
+      if (headerDone) {
+        const btn = document.createElement('button')
+        btn.className = 'cm-md-insert-btn'
+        btn.title = 'Insert row here'
+        btn.textContent = '+'
+        const li = lineIdx
+        btn.addEventListener('mousedown', e => e.preventDefault())
+        btn.addEventListener('click', e => { e.stopPropagation(); insertRowBefore(li) })
+        rowBtnCell.appendChild(btn)
       }
+      tr.appendChild(rowBtnCell)
+
+      // Data cells
+      const positions = cellPositions(line)
+      line.row.cells.forEach((cell, ci) => {
+        const td = document.createElement(tag)
+        td.innerHTML = simpleInlineHtml(cell)
+        if (positions[ci] != null) td.dataset.srcPos = positions[ci]
+        tr.appendChild(td)
+      })
+
+      // Trailing cell aligns with add-column-end column
+      const endCell = document.createElement(tag)
+      endCell.className = 'cm-md-ctrl-cell'
+      tr.appendChild(endCell)
+
       if (!headerDone) { thead.appendChild(tr); headerDone = true }
       else tbody.appendChild(tr)
-    }
+    })
+
+    // ── Add-row button row (bottom of tbody) ─────────────────
+    const addRowTr = document.createElement('tr')
+    addRowTr.className = 'cm-md-add-row-row'
+    const addRowBtnTd = document.createElement('td')
+    addRowBtnTd.className = 'cm-md-ctrl-cell cm-md-row-btn-cell'
+    const addRowBtn = document.createElement('button')
+    addRowBtn.className = 'cm-md-insert-btn cm-md-insert-btn-end'
+    addRowBtn.title = 'Add row'
+    addRowBtn.textContent = '+'
+    addRowBtn.addEventListener('mousedown', e => e.preventDefault())
+    addRowBtn.addEventListener('click', e => { e.stopPropagation(); appendRow() })
+    addRowBtnTd.appendChild(addRowBtn)
+    addRowTr.appendChild(addRowBtnTd)
+    const addRowSpan = document.createElement('td')
+    addRowSpan.colSpan = numCols + 1
+    addRowSpan.className = 'cm-md-ctrl-cell'
+    addRowTr.appendChild(addRowSpan)
+    tbody.appendChild(addRowTr)
+
+    // ── Click on cell → place cursor there ───────────────────
+    wrap.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('button')) return
+      const cell = e.target.closest('[data-src-pos]')
+      e.preventDefault()
+      const pos = cell ? parseInt(cell.dataset.srcPos) : this.blockFrom
+      view.dispatch({ selection: { anchor: pos }, userEvent: 'select' })
+      view.focus()
+    })
 
     wrap.appendChild(table)
     return wrap
@@ -1020,6 +1153,129 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
     })
   })
 })
+
+// Enter while on a table row → move cursor below the table (exit edit mode)
+export function tableEnterExit(view) {
+  const state = view.state
+  const cursor = state.selection.main.head
+  const line   = state.doc.lineAt(cursor)
+  const text   = line.text
+  if (!(/^\s*\|/.test(text) && (text.match(/\|/g) || []).length >= 2)) return false
+
+  // Find the last line of this table block
+  let lastNum = line.number
+  for (let n = line.number + 1; n <= state.doc.lines; n++) {
+    const t = state.doc.line(n).text
+    if (/^\s*\|/.test(t) && t.includes('|')) lastNum = n
+    else break
+  }
+  const lastLine = state.doc.line(lastNum)
+
+  if (lastNum < state.doc.lines) {
+    // Move to the line after the table
+    view.dispatch({ selection: { anchor: state.doc.line(lastNum + 1).from }, userEvent: 'select' })
+  } else {
+    // Table ends the document — insert a blank line
+    view.dispatch({
+      changes: { from: lastLine.to, to: lastLine.to, insert: '\n' },
+      selection: { anchor: lastLine.to + 1 },
+      userEvent: 'input',
+    })
+  }
+  return true
+}
+
+// Tab / Shift+Tab navigation between table cells while editing
+export function tableTabMove(view, backward = false) {
+  const state = view.state
+  const cursor = state.selection.main.head
+  const line   = state.doc.lineAt(cursor)
+  const text   = line.text
+
+  // Only act when this line looks like a table row (starts with | and has at least 2 pipes)
+  if (!(/^\s*\|/.test(text) && (text.match(/\|/g) || []).length >= 2)) return false
+
+  // Skip separator lines like |---|---|
+  const cells = text.replace(/^\||\|$/g, '').split('|')
+  if (cells.every(c => /^[-: ]+$/.test(c) && c.includes('-'))) return false
+
+  // Build absolute positions of the content start of each cell
+  function cellStartsInLine(lineObj) {
+    const t = lineObj.text
+    const starts = []
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === '|') {
+        const afterPipe = lineObj.from + i + 1
+        const spaceOff  = t[i + 1] === ' ' ? 1 : 0
+        starts.push(afterPipe + spaceOff)
+      }
+    }
+    return starts.slice(0, -1) // drop spurious position after trailing |
+  }
+
+  const realCells = cellStartsInLine(line)
+  if (realCells.length === 0) return false
+
+  // Find which cell the cursor is in
+  let currentIdx = realCells.length - 1
+  for (let i = 0; i < realCells.length; i++) {
+    if (cursor < realCells[i]) { currentIdx = i - 1; break }
+  }
+
+  let targetPos
+
+  if (!backward) {
+    // Tab forward
+    if (currentIdx < realCells.length - 1) {
+      // Next cell on same row
+      targetPos = realCells[currentIdx + 1]
+    } else {
+      // Last cell — move to first cell of next non-separator row
+      let nextLineNum = line.number + 1
+      while (nextLineNum <= state.doc.lines) {
+        const nextLine = state.doc.line(nextLineNum)
+        const t = nextLine.text
+        if (/^\s*\|/.test(t) && (t.match(/\|/g) || []).length >= 2) {
+          const isSep = t.replace(/^\||\|$/g, '').split('|').every(c => /^[-: ]+$/.test(c) && c.includes('-'))
+          if (!isSep) {
+            const realNext = cellStartsInLine(nextLine)
+            if (realNext.length > 0) { targetPos = realNext[0]; break }
+          }
+        } else {
+          break
+        }
+        nextLineNum++
+      }
+    }
+  } else {
+    // Shift+Tab backward
+    if (currentIdx > 0) {
+      // Previous cell on same row
+      targetPos = realCells[currentIdx - 1]
+    } else {
+      // First cell — move to last cell of previous non-separator row
+      let prevLineNum = line.number - 1
+      while (prevLineNum >= 1) {
+        const prevLine = state.doc.line(prevLineNum)
+        const t = prevLine.text
+        if (/^\s*\|/.test(t) && (t.match(/\|/g) || []).length >= 2) {
+          const isSep = t.replace(/^\||\|$/g, '').split('|').every(c => /^[-: ]+$/.test(c) && c.includes('-'))
+          if (!isSep) {
+            const realPrev = cellStartsInLine(prevLine)
+            if (realPrev.length > 0) { targetPos = realPrev[realPrev.length - 1]; break }
+          }
+        } else {
+          break
+        }
+        prevLineNum--
+      }
+    }
+  }
+
+  if (targetPos == null) return false
+  view.dispatch({ selection: { anchor: targetPos }, userEvent: 'select' })
+  return true
+}
 
 export const livePreviewPlugin = [
   frontmatterBlockField,

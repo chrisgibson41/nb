@@ -1,11 +1,12 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, highlightActiveLine } from '@codemirror/view'
+import { Prec } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { livePreviewPlugin } from './livePreviewPlugin.js'
+import { livePreviewPlugin, tableTabMove, tableEnterExit } from './livePreviewPlugin.js'
 import './editor.css'
 
 const baseTheme = EditorView.theme({
@@ -46,6 +47,10 @@ function createEditorState(doc, onChange) {
     doc,
     extensions: [
       history(),
+      Prec.high(keymap.of([
+        { key: 'Tab',   run: view => tableTabMove(view, false), shift: view => tableTabMove(view, true) },
+        { key: 'Enter', run: tableEnterExit },
+      ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       oneDark,
