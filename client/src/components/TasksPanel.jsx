@@ -93,11 +93,12 @@ function groupByFile(tasks) {
   return [...map.values()];
 }
 
-export default function TasksPanel({ onClose, onFileSelect }) {
+export default function TasksPanel({ onClose, onFileSelect, onTaskToggled }) {
   const [tasks, setTasks]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState('open');   // 'all' | 'open' | 'done'
   const [collapsed, setCollapsed] = useState(new Set());
+  const [pendingToggle, setPendingToggle] = useState(new Set());
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -108,6 +109,36 @@ export default function TasksPanel({ onClose, onFileSelect }) {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const taskKey = (task) => `${task.path}:${task.lineNumber}`;
+
+  const toggleTask = useCallback(async (task) => {
+    const key = taskKey(task);
+    if (pendingToggle.has(key)) return;
+    setPendingToggle(prev => new Set(prev).add(key));
+    // Optimistic update
+    const newDone = !task.done;
+    setTasks(prev => prev.map(t => taskKey(t) === key ? { ...t, done: newDone } : t));
+    try {
+      const res = await fetch(`${API}/api/task/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: task.path, lineNumber: task.lineNumber }),
+      });
+      if (!res.ok) throw new Error('toggle failed');
+      const data = await res.json();
+      // Reconcile in case server disagrees (shouldn't normally)
+      if (data.done !== newDone) {
+        setTasks(prev => prev.map(t => taskKey(t) === key ? { ...t, done: data.done } : t));
+      }
+      onTaskToggled?.({ ...task, done: data.done });
+    } catch {
+      // Rollback
+      setTasks(prev => prev.map(t => taskKey(t) === key ? { ...t, done: task.done } : t));
+    } finally {
+      setPendingToggle(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  }, [pendingToggle, onTaskToggled]);
 
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
@@ -195,12 +226,18 @@ export default function TasksPanel({ onClose, onFileSelect }) {
                   <div
                     key={i}
                     style={S.task(task.done)}
-                    onClick={() => { onFileSelect(task.path); }}
+                    onClick={() => { onFileSelect(task.path, task.lineNumber); }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#252526'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                     title={`Line ${task.lineNumber} — click to open note`}
                   >
-                    <div style={S.checkbox(task.done)}>{task.done && TICK}</div>
+                    <div
+                      style={{ ...S.checkbox(task.done), cursor: 'pointer' }}
+                      onClick={(e) => { e.stopPropagation(); toggleTask(task); }}
+                      title={task.done ? 'Mark as not done' : 'Mark as done'}
+                    >
+                      {task.done && TICK}
+                    </div>
                     <span style={S.taskText(task.done)}>{task.text}</span>
                   </div>
                 ))}

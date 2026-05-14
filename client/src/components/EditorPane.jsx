@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import { EditorState, Prec } from '@codemirror/state'
-import { EditorView, keymap, highlightActiveLine } from '@codemirror/view'
+import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
+import { EditorView, keymap, highlightActiveLine, Decoration } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { acceptCompletion, nextSnippetField, prevSnippetField, completionStatus } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -42,6 +42,32 @@ const baseTheme = EditorView.theme({
   '.cm-activeLine':   { background: 'rgba(255,255,255,0.03)' },
 })
 
+// ── Line highlight (used when navigating from TasksPanel) ─────────────────
+// Adds the `.cm-task-highlight` class to a single line via a state field,
+// so the highlight survives viewport changes (unlike direct DOM manipulation).
+const setHighlightLineEffect   = StateEffect.define()
+const clearHighlightLineEffect = StateEffect.define()
+
+const highlightLineField = StateField.define({
+  create() { return Decoration.none },
+  update(deco, tr) {
+    deco = deco.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setHighlightLineEffect)) {
+        const lineNum = Math.min(Math.max(1, e.value), tr.state.doc.lines)
+        const line = tr.state.doc.line(lineNum)
+        deco = Decoration.set([
+          Decoration.line({ attributes: { class: 'cm-task-highlight' } }).range(line.from),
+        ])
+      } else if (e.is(clearHighlightLineEffect)) {
+        deco = Decoration.none
+      }
+    }
+    return deco
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+
 // Esc:
 //   1. If autocomplete is open, let it close the dropdown (return false).
 //   2. If the cursor is inside a live-preview block (mermaid/code fence,
@@ -81,6 +107,7 @@ function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
         { key: 'Escape', run: escapeBlockOrBlur },
       ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      highlightLineField,
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       oneDark,
       baseTheme,
@@ -157,7 +184,7 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
     return () => el.removeEventListener('nb:wiki-link', handler)
   }, [])
 
-  // Expose scrollToText to parent via ref
+  // Expose imperative actions to parent via ref
   useImperativeHandle(ref, () => ({
     scrollToText(searchText) {
       const view = viewRef.current
@@ -171,6 +198,28 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
         effects: EditorView.scrollIntoView(idx, { y: 'center' }),
       })
       view.focus()
+    },
+    scrollToLine(lineNumber, { highlight = false } = {}) {
+      const view = viewRef.current
+      if (!view || !Number.isFinite(lineNumber)) return
+      const total = view.state.doc.lines
+      const clamped = Math.min(Math.max(1, lineNumber), total)
+      const line = view.state.doc.line(clamped)
+      const effects = [EditorView.scrollIntoView(line.from, { y: 'center' })]
+      if (highlight) effects.push(setHighlightLineEffect.of(clamped))
+      view.dispatch({
+        selection:      { anchor: line.from },
+        scrollIntoView: true,
+        effects,
+      })
+      view.focus()
+      if (highlight) {
+        setTimeout(() => {
+          if (viewRef.current) {
+            viewRef.current.dispatch({ effects: clearHighlightLineEffect.of(null) })
+          }
+        }, 1800)
+      }
     },
   }))
 

@@ -678,6 +678,31 @@ app.get('/api/tasks', (req, res) => {
   }
 });
 
+// POST /api/task/toggle — flip a checkbox `- [ ]` <-> `- [x]` at a given line
+app.post('/api/task/toggle', (req, res) => {
+  try {
+    const { path: filePath, lineNumber } = req.body;
+    if (!filePath) return res.status(400).json({ error: 'path required' });
+    if (!Number.isInteger(lineNumber) || lineNumber < 1) {
+      return res.status(400).json({ error: 'lineNumber must be a positive integer' });
+    }
+    const safe = safePath(filePath, NOTES_DIR);
+    const content = fs.readFileSync(safe, 'utf-8');
+    const lines = content.split('\n');
+    const idx = lineNumber - 1;
+    if (idx >= lines.length) return res.status(400).json({ error: 'lineNumber out of range' });
+    const m = lines[idx].match(/^(\s*-\s*\[)([ xX])(\].*)$/);
+    if (!m) return res.status(400).json({ error: 'line is not a task' });
+    const done = m[2].toLowerCase() !== 'x';
+    lines[idx] = m[1] + (done ? 'x' : ' ') + m[3];
+    fs.writeFileSync(safe, lines.join('\n'), 'utf-8');
+    res.json({ success: true, path: safe, lineNumber, done });
+    gitCommitFile(safe);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // GET /api/backlinks?name=NoteName — files that contain [[NoteName]]
 app.get('/api/backlinks', (req, res) => {
   try {
