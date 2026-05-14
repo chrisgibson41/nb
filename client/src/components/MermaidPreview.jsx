@@ -137,7 +137,7 @@ function ZoomBtn({ onClick, title, children }) {
   )
 }
 
-export default function MermaidPreview({ code, width = 400, collapsed = false, focusText = null, onToggleCollapse }) {
+export default function MermaidPreview({ code, height = 280, collapsed = false, focusText = null, onToggleCollapse }) {
   const [lastValidSvg, setLastValidSvg] = useState(null)
   const [invalid, setInvalid]           = useState(false)
   const [loading, setLoading]           = useState(true)
@@ -272,16 +272,33 @@ export default function MermaidPreview({ code, width = 400, collapsed = false, f
     setZoomPct(Math.round(newZoom * 100))
   }, [applyTransform])
 
-  // ── Focus-sync: pan to the SVG element matching the cursor line ─────────────
-  const panToElement = useCallback((el) => {
+  // ── Focus-sync: zoom in on (and pan to) the SVG element matching the line ──
+  // Bumps zoom up to FOCUS_ZOOM_MIN if the user is zoomed out further,
+  // never zooms back out — so manual zooming wins.
+  const FOCUS_ZOOM_MIN = 1.6
+  const focusOnElement = useCallback((el) => {
     if (!bodyRef.current || !el) return
     const bodyRect = bodyRef.current.getBoundingClientRect()
     const elemRect = el.getBoundingClientRect()
+
+    // Element centre, in viewport-local coords
     const elemCX = elemRect.left + elemRect.width  / 2 - bodyRect.left
     const elemCY = elemRect.top  + elemRect.height / 2 - bodyRect.top
-    viewRef.current.x += bodyRect.width  / 2 - elemCX
-    viewRef.current.y += bodyRect.height / 2 - elemCY
+
+    // Convert to canvas-space ("world") so we can re-position after zoom
+    const { zoom, x, y } = viewRef.current
+    const worldX = (elemCX - x) / zoom
+    const worldY = (elemCY - y) / zoom
+
+    // Zoom up to the focus level, but don't shrink existing zoom
+    const newZoom = Math.min(ZOOM_MAX, Math.max(zoom, FOCUS_ZOOM_MIN))
+    viewRef.current = {
+      zoom: newZoom,
+      x: bodyRect.width  / 2 - worldX * newZoom,
+      y: bodyRect.height / 2 - worldY * newZoom,
+    }
     applyTransform()
+    setZoomPct(Math.round(newZoom * 100))
   }, [applyTransform])
 
   useEffect(() => {
@@ -314,45 +331,45 @@ export default function MermaidPreview({ code, width = 400, collapsed = false, f
     }
     if (!matched) return
 
-    panToElement(matched)
+    focusOnElement(matched)
     matched.style.outline = '2px solid rgba(0,122,204,0.8)'
     setTimeout(() => { matched.style.outline = '' }, 1200)
-  }, [focusText, panToElement])
+  }, [focusText, focusOnElement])
 
   const dotColor = loading ? '#555' : invalid ? '#e5c07b' : '#4ec9a2'
 
-  // ── Collapsed strip ─────────────────────────────────────────────────────────
+  // ── Collapsed strip (horizontal bar across the top) ────────────────────────
   if (collapsed) {
     return (
-      <div style={{ width: '24px', flexShrink: 0, display: 'flex', flexDirection: 'column',
+      <div style={{ height: '24px', flexShrink: 0, display: 'flex', flexDirection: 'row',
                     alignItems: 'center', background: '#1a1a1a',
-                    borderLeft: '1px solid #2e2e2e', overflow: 'hidden' }}>
+                    borderBottom: '1px solid #2e2e2e', overflow: 'hidden',
+                    padding: '0 10px', gap: '8px' }}>
         <button onClick={onToggleCollapse} title="Expand diagram preview"
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#555',
-                   padding: '6px 0', lineHeight: 1, display: 'flex', alignItems: 'center' }}
+                   padding: '0 4px', lineHeight: 1, display: 'flex', alignItems: 'center' }}
           onMouseEnter={e => { e.currentTarget.style.color = '#999' }}
           onMouseLeave={e => { e.currentTarget.style.color = '#555' }}>
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor"
                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="8,2 4,6 8,10" />
+            <polyline points="2,4 6,8 10,4" />
           </svg>
         </button>
         <div onClick={onToggleCollapse}
-          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: '10px',
-                   fontWeight: 700, color: '#444', letterSpacing: '0.1em',
-                   textTransform: 'uppercase', marginTop: '8px', cursor: 'pointer', userSelect: 'none' }}
+          style={{ fontSize: '10px', fontWeight: 700, color: '#444', letterSpacing: '0.1em',
+                   textTransform: 'uppercase', cursor: 'pointer', userSelect: 'none', flex: 1 }}
           onMouseEnter={e => { e.currentTarget.style.color = '#888' }}
           onMouseLeave={e => { e.currentTarget.style.color = '#444' }}>
-          Preview
+          Diagram preview
         </div>
-        <span style={{ ...s.dot(dotColor), marginTop: '8px' }} />
+        <span style={s.dot(dotColor)} />
       </div>
     )
   }
 
   // ── Expanded ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ ...s.panel, width: `${width}px`, minWidth: '200px' }}>
+    <div style={{ ...s.panel, height: `${height}px`, minHeight: '120px', width: '100%' }}>
 
       {/* Header */}
       <div style={s.header}>
@@ -380,7 +397,7 @@ export default function MermaidPreview({ code, width = 400, collapsed = false, f
             onMouseLeave={e => { e.currentTarget.style.color = '#555' }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor"
                  strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="4,2 8,6 4,10" />
+              <polyline points="2,8 6,4 10,8" />
             </svg>
           </button>
         )}
