@@ -183,6 +183,16 @@
   vertical-align: middle;
 }
 
+/* ── Task highlight flash (used when navigating from TasksPanel) ─────────── */
+.cm-line.cm-task-highlight {
+  animation: cm-task-flash 1.8s ease-out;
+}
+@keyframes cm-task-flash {
+  0%   { background: rgba(0, 122, 204, 0.35); }
+  60%  { background: rgba(0, 122, 204, 0.18); }
+  100% { background: transparent; }
+}
+
 /* ── Bullet ──────────────────────────────────────────────────────────────── */
 .cm-md-bullet {
   font-size: 1.1em;

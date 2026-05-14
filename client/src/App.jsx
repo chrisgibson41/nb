@@ -135,7 +135,9 @@ export default function App() {
   // Load file from server and open/switch to its tab.
   // Opening always reuses the single preview tab unless the file already has
   // a permanent (non-preview) tab open.
-  const openFile = useCallback(async (filePath) => {
+  // Pass `lineNumber` to scroll to (and briefly highlight) a specific line —
+  // used by TasksPanel when navigating to a task.
+  const openFile = useCallback(async (filePath, lineNumber) => {
     try {
       const res = await fetch(`${API}/api/file?path=${encodeURIComponent(filePath)}`);
       if (!res.ok) throw new Error('Failed to load');
@@ -154,10 +156,31 @@ export default function App() {
         const pinned = prev.filter(t => t.pinned);
         return [...pinned, { path: filePath, pinned: false, preview: true }];
       });
+      // After the editor re-mounts/re-syncs its content, scroll to the requested
+      // line and flash a highlight. Two rAFs let the file-switch effect commit
+      // its scroll-to-top dispatch first.
+      if (Number.isFinite(lineNumber)) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          editorRef.current?.scrollToLine(lineNumber, { highlight: true });
+        }));
+      }
     } catch (err) {
       console.error('Error opening file:', err);
     }
   }, [currentFile, commitFile]);
+
+  // Refresh the editor's view of the current file from disk. Used after a
+  // TasksPanel toggle changes a file that's currently open.
+  const refreshCurrentFileFromDisk = useCallback(async (filePath) => {
+    if (!filePath || filePath !== currentFile) return;
+    try {
+      const res = await fetch(`${API}/api/file?path=${encodeURIComponent(filePath)}`);
+      if (!res.ok) return;
+      const text = await res.text();
+      setContent(text);
+      setSavedContent(text);
+    } catch { /* ignore */ }
+  }, [currentFile]);
 
   // Resolve [[Wiki Link]] note names to file paths via the server
   const handleWikiLink = useCallback(async (noteName) => {
@@ -550,7 +573,8 @@ export default function App() {
       {showTasks && (
         <TasksPanel
           onClose={() => setShowTasks(false)}
-          onFileSelect={(path) => { openFile(path); setShowTasks(false); }}
+          onFileSelect={(path, lineNumber) => { openFile(path, lineNumber); setShowTasks(false); }}
+          onTaskToggled={(task) => refreshCurrentFileFromDisk(task.path)}
         />
       )}
     </div>
