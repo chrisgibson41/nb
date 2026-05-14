@@ -1221,13 +1221,20 @@ export function findActiveEditBlock(state) {
 // ─── Export plugin ────────────────────────────────────────────────────────────
 // Exported as an array so both extensions are registered together.
 
-// After a mermaid block re-renders (cursor moved out), the widget gains height
-// and pushes the cursor off-screen. Scroll to cursor after layout settles.
+// Crossing a mermaid block boundary (enter or leave) swaps the rendered SVG
+// widget for raw text or vice versa, which can push the cursor off-screen.
+// Scroll the cursor back into view once layout settles.
+//
+// We compare `activeMermaidField` (a string or null) rather than the block
+// decoration RangeSet — the RangeSet is rebuilt on every doc change, which
+// would cause this listener to fire (and reset scroll) on unrelated edits
+// like ticking a checkbox.
 const mermaidScrollListener = EditorView.updateListener.of(update => {
-  if (!update.selectionSet && !update.docChanged) return
-  const before = update.startState.field(mermaidBlockField, false)
-  const after  = update.state.field(mermaidBlockField, false)
-  if (before === after) return
+  const before = update.startState.field(activeMermaidField, false)
+  const after  = update.state.field(activeMermaidField, false)
+  const wasIn = before !== null && before !== undefined
+  const isIn  = after  !== null && after  !== undefined
+  if (wasIn === isIn) return   // no widget/raw transition
   requestAnimationFrame(() => {
     const cursor = update.view.state.selection.main.head
     update.view.dispatch({
