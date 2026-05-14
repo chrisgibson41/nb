@@ -1178,6 +1178,46 @@ export const activeMermaidField = StateField.define({
   },
 })
 
+// ─── Active edit-mode block lookup ──────────────────────────────────────────
+// Returns the live-preview block (frontmatter, fence, or table) the cursor is
+// currently inside, plus a position just past it. Used by Esc to "exit" the
+// block so its widget re-renders.
+export function findActiveEditBlock(state) {
+  try {
+    const head = state.selection.main.head
+    const cursorLineN = state.doc.lineAt(head).number
+
+    // Helper: the position just past the block's last line, clamped to doc end
+    const exitAfter = (lastLineN) =>
+      lastLineN < state.doc.lines
+        ? state.doc.line(lastLineN + 1).from
+        : state.doc.line(lastLineN).to
+
+    // Frontmatter (must start at line 1)
+    const fm = parseFrontmatter(state)
+    if (fm && cursorLineN >= fm.start && cursorLineN <= fm.end) {
+      return { type: 'frontmatter', exitPos: exitAfter(fm.end) }
+    }
+
+    // Fence blocks (mermaid, code, etc.)
+    const fences = parseFenceBlocks(state)
+    for (const block of fences) {
+      if (cursorLineN >= block.start && cursorLineN <= block.end) {
+        return { type: 'fence', lang: block.lang, exitPos: exitAfter(block.end) }
+      }
+    }
+
+    // Markdown tables
+    const tables = detectTables(state)
+    for (const tbl of tables) {
+      if (cursorLineN >= tbl.start && cursorLineN <= tbl.end) {
+        return { type: 'table', exitPos: exitAfter(tbl.end) }
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return null
+}
+
 // ─── Export plugin ────────────────────────────────────────────────────────────
 // Exported as an array so both extensions are registered together.
 

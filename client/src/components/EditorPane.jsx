@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 're
 import { EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { acceptCompletion, nextSnippetField, prevSnippetField } from '@codemirror/autocomplete'
+import { acceptCompletion, nextSnippetField, prevSnippetField, completionStatus } from '@codemirror/autocomplete'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { livePreviewPlugin, activeMermaidField } from './livePreviewPlugin.js'
+import { livePreviewPlugin, activeMermaidField, findActiveEditBlock } from './livePreviewPlugin.js'
 import { mermaidCompletion } from './mermaidCompletion.js'
 import MermaidPreview from './MermaidPreview.jsx'
 import './editor.css'
@@ -42,6 +42,27 @@ const baseTheme = EditorView.theme({
   '.cm-activeLine':   { background: 'rgba(255,255,255,0.03)' },
 })
 
+// Esc:
+//   1. If autocomplete is open, let it close the dropdown (return false).
+//   2. If the cursor is inside a live-preview block (mermaid/code fence,
+//      frontmatter, or a markdown table), jump past the block so its widget
+//      re-renders.
+//   3. Otherwise, blur the editor — exits markdown edit mode altogether.
+function escapeBlockOrBlur(view) {
+  if (completionStatus(view.state) === 'active') return false
+  const block = findActiveEditBlock(view.state)
+  if (block) {
+    view.dispatch({
+      selection: { anchor: block.exitPos },
+      scrollIntoView: true,
+      userEvent: 'select.escape-block',
+    })
+    return true
+  }
+  view.contentDOM.blur()
+  return true
+}
+
 function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
   return EditorState.create({
     doc,
@@ -55,6 +76,9 @@ function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
       Prec.high(keymap.of([
         { key: 'Tab',       run: acceptCompletion },
         { key: 'Tab',       run: nextSnippetField, shift: prevSnippetField },
+      ])),
+      Prec.high(keymap.of([
+        { key: 'Escape', run: escapeBlockOrBlur },
       ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       markdown({ base: markdownLanguage, codeLanguages: languages }),
