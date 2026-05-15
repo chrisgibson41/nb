@@ -11,7 +11,12 @@ function parseHeadings(content) {
   const headings = [];
   for (const line of body.split('\n')) {
     const m = line.match(/^(#{1,6})\s+(.+)/);
-    if (m) headings.push({ level: m[1].length, text: m[2].trim() });
+    if (m) {
+      const raw = m[2].trim();
+      const isTasks = /^\[\](?!\()/.test(raw);
+      const display = isTasks ? raw.replace(/^\[\](?!\()\s*/, '') : raw;
+      headings.push({ level: m[1].length, text: display, raw, isTasks });
+    }
   }
   return headings;
 }
@@ -77,10 +82,11 @@ export default function OutlinePanel({ content, onScrollTo, collapseButton, coll
                 ...headingStyle(h.level),
               }}
               title={h.text}
-              onClick={() => onScrollTo?.(h.text)}
+              onClick={() => onScrollTo?.(h.raw || h.text)}
               onMouseEnter={(e) => { e.currentTarget.style.background = '#2a2d2e'; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
+              {h.isTasks && <span style={{ color: '#5aabde', marginRight: '4px' }}>☐</span>}
               {h.text}
             </div>
           ))}

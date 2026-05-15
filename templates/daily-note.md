@@ -31,7 +31,7 @@ _shortcuts:
 ## Notes
 
 
-## Tasks
+## [] Tasks
 - [ ] 
 
 ## Meetings

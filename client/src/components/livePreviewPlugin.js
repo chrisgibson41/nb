@@ -257,6 +257,21 @@ class CheckboxWidget extends WidgetType {
   ignoreEvent() { return false }
 }
 
+// Replaces the `[]` prefix in a tasks-section heading with a small unicode
+// ballot-box glyph. The raw `[]` is shown when the cursor is on the heading
+// line (live-preview pattern), so editing works as expected.
+class TasksHeadingMarkerWidget extends WidgetType {
+  eq() { return true }
+  toDOM() {
+    const el = document.createElement('span')
+    el.className = 'cm-md-tasks-marker'
+    el.textContent = '☐'
+    el.title = 'Tasks section — new bullets become tasks'
+    return el
+  }
+  ignoreEvent() { return true }
+}
+
 class BulletWidget extends WidgetType {
   toDOM() {
     const el = document.createElement('span')
@@ -1069,7 +1084,22 @@ function buildDecorations(view) {
 
         builder.add(from, from, Decoration.line({ class: lineClass }))
         builder.add(from, from + prefix, Decoration.replace({}))  // hide '## '
-        addInline(builder, text.slice(prefix), from + prefix)
+
+        // Tasks-section heading: hide the `[]` (and optional trailing space)
+        // and show a ballot-box glyph in its place.
+        const body = text.slice(prefix)
+        const tm   = body.match(/^\[\](?!\()(\s?)/)
+        if (tm) {
+          const tasksLen = tm[0].length
+          builder.add(
+            from + prefix,
+            from + prefix + tasksLen,
+            Decoration.replace({ widget: new TasksHeadingMarkerWidget() }),
+          )
+          addInline(builder, body.slice(tasksLen), from + prefix + tasksLen)
+        } else {
+          addInline(builder, body, from + prefix)
+        }
         continue
       }
 
@@ -1243,6 +1273,46 @@ const mermaidScrollListener = EditorView.updateListener.of(update => {
   })
 })
 
+// ─── Tasks-section auto-expand ───────────────────────────────────────────────
+// Any heading whose text starts with `[]` marks the section as a tasks list.
+// When the cursor ends up at the end of a bare `- ` (or `* `) line under such
+// a heading — whether from typing or from list continuation via Enter — we
+// auto-insert `[ ] ` so the bullet becomes a checkbox task.
+//
+// Existing bullets without `[ ]` are left alone so users can convert their
+// notes section-by-section without surprises.
+function isUnderTasksSection(state, lineNumber) {
+  for (let n = lineNumber - 1; n >= 1; n--) {
+    const text = state.doc.line(n).text
+    const m = text.match(/^#{1,6}\s+(.*)$/)
+    if (!m) continue
+    // Tasks heading: text starts with `[]` (and isn't a `[](link)` markdown link)
+    return /^\[\](?!\()/.test(m[1].trim())
+  }
+  return false
+}
+
+const tasksAutoExpandListener = EditorView.updateListener.of(update => {
+  if (!update.docChanged) return
+  // Don't recurse on our own follow-up dispatch
+  for (const tr of update.transactions) {
+    if (tr.isUserEvent('input.autoexpand-task')) return
+  }
+  const state = update.state
+  const head  = state.selection.main.head
+  const line  = state.doc.lineAt(head)
+  // Cursor must be at end of a `- ` / `* ` / `+ ` line (possibly indented),
+  // with no other content on the line.
+  if (head !== line.to) return
+  if (!/^\s*[-*+]\s$/.test(line.text)) return
+  if (!isUnderTasksSection(state, line.number)) return
+  update.view.dispatch({
+    changes: { from: head, insert: '[ ] ' },
+    selection: { anchor: head + 4 },
+    userEvent: 'input.autoexpand-task',
+  })
+})
+
 export const livePreviewPlugin = [
   frontmatterBlockField,
   mermaidBlockField,
@@ -1250,6 +1320,7 @@ export const livePreviewPlugin = [
   activeMermaidField,
   tableBlockField,
   mermaidScrollListener,
+  tasksAutoExpandListener,
   ViewPlugin.fromClass(
     class {
       constructor(view) { this.decorations = buildDecorations(view) }

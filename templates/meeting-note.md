@@ -24,6 +24,6 @@ _shortcuts:
 ## Notes
 
 
-## Action Items
+## [] Action Items
 - [ ] 
 

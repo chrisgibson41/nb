@@ -201,6 +201,15 @@
   font-family: sans-serif;
 }
 
+/* ── Tasks-section heading marker (replaces leading "[]" in a heading) ──── */
+.cm-md-tasks-marker {
+  display: inline-block;
+  margin-right: 0.4em;
+  color: #5aabde;
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
+}
+
 /* ── Entry blocks (h3 entries nested under h2 sections) ─────────────────── */
 /* Each shortcut-added entry (### heading + body) gets a left accent bar and  */
 /* a subtle tinted background. Entries alternate between two tints so         */
