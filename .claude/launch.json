@@ -2,10 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "obsidian-client",
+      "name": "nb",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/chris/git/obsidian/client",
       "port": 5173
     }
   ]

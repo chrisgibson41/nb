@@ -300,6 +300,89 @@
   border-radius: 3px;
 }
 
+/* Control cells: row-insert column (first) and col-insert column (last) */
+.cm-md-ctrl-cell {
+  width: 22px !important;
+  min-width: 0 !important;
+  max-width: 22px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  vertical-align: middle;
+}
+.cm-md-table tr:nth-child(even) .cm-md-ctrl-cell,
+.cm-md-table tr:hover .cm-md-ctrl-cell {
+  background: transparent !important;
+}
+
+/* Column-insert button row — shown on table hover */
+.cm-md-col-btn-row th {
+  background: transparent !important;
+  border: none !important;
+}
+.cm-md-col-btn-cell {
+  text-align: center;
+  padding: 2px 0 !important;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cm-md-table-wrap:hover .cm-md-col-btn-cell {
+  opacity: 1;
+}
+
+/* Row-insert button column — shown on row hover */
+.cm-md-row-btn-cell button {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cm-md-table tr:hover .cm-md-row-btn-cell button {
+  opacity: 1;
+}
+
+/* Add-row bottom row — shown on table hover */
+.cm-md-add-row-row td {
+  background: transparent !important;
+  border: none !important;
+  padding: 2px 0 !important;
+}
+.cm-md-add-row-row .cm-md-row-btn-cell button {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cm-md-table-wrap:hover .cm-md-add-row-row .cm-md-row-btn-cell button {
+  opacity: 1;
+}
+
+/* Insert buttons */
+.cm-md-insert-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #4a4a6a;
+  background: #2a2a3a;
+  color: #888aaa;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.cm-md-insert-btn:hover {
+  background: #3c3c58;
+  color: #b0b2d0;
+  border-color: #6a6a9a;
+}
+/* "end" variant is always slightly visible as a persistent affordance */
+.cm-md-insert-btn-end {
+  opacity: 0.45;
+}
+.cm-md-insert-btn-end:hover {
+  opacity: 1;
+}
+
 /* Mermaid diagram widget ──────────────────────────────────────────────── */
 .cm-md-mermaid {
   display: block;
