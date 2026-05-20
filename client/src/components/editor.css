@@ -332,6 +332,64 @@
   white-space: pre-wrap;
 }
 
+/* drawio diagram widget ─────────────────────────────────────────────────── */
+.cm-md-drawio {
+  display: block;
+  margin: 8px 0;
+  background: #1a1a1a;
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.cm-md-drawio-body {
+  padding: 12px;
+  min-height: 80px;
+  cursor: pointer;
+  background: #ffffff;
+}
+.cm-md-drawio-body .mxgraph {
+  background: transparent;
+  pointer-events: none; /* let clicks open the editor */
+}
+.cm-md-drawio-placeholder {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  color: #555;
+  text-align: center;
+  padding: 24px 16px;
+  background: #1a1a1a;
+}
+.cm-md-drawio-error {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: #f44747;
+  padding: 12px;
+  background: rgba(244, 71, 71, 0.07);
+}
+.cm-md-drawio-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #1a1a1a;
+  border-top: 1px solid #2e2e2e;
+  justify-content: flex-end;
+}
+.cm-md-drawio-btn {
+  background: #2d2d2d;
+  color: #ddd;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  cursor: pointer;
+}
+.cm-md-drawio-btn:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
 /* ── Mermaid autocompletion dropdown ─────────────────────────────────────── */
 .cm-tooltip.cm-tooltip-autocomplete {
   background: #252526;

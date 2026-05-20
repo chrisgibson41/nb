@@ -213,6 +213,131 @@ class MermaidWidget extends WidgetType {
   ignoreEvent() { return true }
 }
 
+// ─── drawio ──────────────────────────────────────────────────────────────────
+// Renders a ```drawio fence as an inline diagram using the official drawio
+// static viewer (loaded from viewer.diagrams.net). The widget exposes Edit
+// and Export controls; Edit dispatches a `nb:drawio-edit` event that the
+// EditorPane catches to open the embedded editor modal.
+
+let drawioViewerPromise = null
+function loadDrawioViewer() {
+  if (drawioViewerPromise) return drawioViewerPromise
+  drawioViewerPromise = new Promise((resolve, reject) => {
+    if (window.GraphViewer) return resolve()
+    const s = document.createElement('script')
+    s.src = 'https://viewer.diagrams.net/js/viewer-static.min.js'
+    s.async = true
+    s.onload  = () => resolve()
+    s.onerror = () => { drawioViewerPromise = null; reject(new Error('drawio viewer load failed')) }
+    document.head.appendChild(s)
+  })
+  return drawioViewerPromise
+}
+
+function downloadDrawioXml(xml) {
+  const blob = new Blob([xml || ''], { type: 'application/xml' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = `diagram-${Date.now()}.drawio`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function dispatchDrawioEdit(view, xml, blockFrom) {
+  view.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
+    detail: { xml, blockFrom },
+    bubbles: true,
+  }))
+}
+
+class DrawioWidget extends WidgetType {
+  constructor(xml, blockFrom) { super(); this.xml = xml; this.blockFrom = blockFrom }
+  eq(other) { return other.xml === this.xml && other.blockFrom === this.blockFrom }
+
+  toDOM(view) {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-drawio'
+
+    const body = document.createElement('div')
+    body.className = 'cm-md-drawio-body'
+
+    // Click anywhere on the diagram body opens the editor
+    body.addEventListener('click', (e) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      dispatchDrawioEdit(view, this.xml, this.blockFrom)
+    })
+
+    if (!this.xml || this.xml.trim() === '') {
+      const ph = document.createElement('div')
+      ph.className = 'cm-md-drawio-placeholder'
+      ph.textContent = 'Click to create a diagram'
+      body.appendChild(ph)
+    } else {
+      const target = document.createElement('div')
+      target.className = 'mxgraph'
+      target.setAttribute('data-mxgraph', JSON.stringify({
+        editable: false,
+        toolbar: 'pages',
+        resize: true,
+        nav: false,
+        xml: this.xml,
+      }))
+      body.appendChild(target)
+      loadDrawioViewer().then(() => {
+        // The static viewer renders any new .mxgraph elements via its own
+        // helper. createViewerForElement is the public API for this.
+        const GV = window.GraphViewer
+        if (GV && typeof GV.createViewerForElement === 'function') {
+          GV.createViewerForElement(target)
+        } else if (GV && typeof GV.processElements === 'function') {
+          GV.processElements()
+        }
+      }).catch(() => {
+        body.innerHTML = ''
+        const err = document.createElement('div')
+        err.className = 'cm-md-drawio-error'
+        err.textContent = 'Could not load the drawio viewer.'
+        body.appendChild(err)
+      })
+    }
+
+    // Toolbar: Edit + Export
+    const toolbar = document.createElement('div')
+    toolbar.className = 'cm-md-drawio-toolbar'
+
+    const editBtn = document.createElement('button')
+    editBtn.className = 'cm-md-drawio-btn'
+    editBtn.textContent = 'Edit'
+    editBtn.title = 'Open in drawio editor'
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      dispatchDrawioEdit(view, this.xml, this.blockFrom)
+    })
+
+    const exportBtn = document.createElement('button')
+    exportBtn.className = 'cm-md-drawio-btn'
+    exportBtn.textContent = 'Export'
+    exportBtn.title = 'Download as .drawio (import in Confluence, etc.)'
+    exportBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      downloadDrawioXml(this.xml)
+    })
+
+    toolbar.appendChild(editBtn)
+    toolbar.appendChild(exportBtn)
+
+    wrap.appendChild(body)
+    wrap.appendChild(toolbar)
+    return wrap
+  }
+
+  ignoreEvent() { return false }
+}
+
 // ─── Widgets ─────────────────────────────────────────────────────────────────
 
 class HRWidget extends WidgetType {
@@ -979,6 +1104,50 @@ const mermaidBlockField = StateField.define({
   provide: f => EditorView.decorations.from(f),
 })
 
+// ─── Drawio block decorations ─────────────────────────────────────────────
+// Mirrors the mermaid block field — replaces a ```drawio fence with a
+// DrawioWidget when the cursor is outside the block.
+function buildDrawioDecorationsFromState(state) {
+  try {
+    const builder = new RangeSetBuilder()
+    const fenceBlocks = parseFenceBlocks(state)
+    const cursorLines = getCursorLines(state, fenceBlocks)
+
+    for (const block of fenceBlocks) {
+      if (block.lang !== 'drawio') continue
+      let active = false
+      for (let n = block.start; n <= block.end; n++) {
+        if (cursorLines.has(n)) { active = true; break }
+      }
+      if (active) continue
+
+      let xml = ''
+      for (let i = block.start + 1; i < block.end; i++) {
+        xml += state.doc.line(i).text + '\n'
+      }
+      const blockFrom = state.doc.line(block.start).from
+      const lastLine  = state.doc.line(block.end)
+      const blockTo   = block.end < state.doc.lines ? lastLine.to + 1 : lastLine.to
+      builder.add(blockFrom, blockTo, Decoration.replace({
+        widget: new DrawioWidget(xml.trim(), blockFrom),
+        block: true,
+      }))
+    }
+    return builder.finish()
+  } catch (e) {
+    return new RangeSetBuilder().finish()
+  }
+}
+
+const drawioBlockField = StateField.define({
+  create(state) { return buildDrawioDecorationsFromState(state) },
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildDrawioDecorationsFromState(tr.state)
+    return deco
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+
 // ─── Inline/block decoration builder (ViewPlugin — no block: true allowed) ───
 
 function buildDecorations(view) {
@@ -1029,8 +1198,10 @@ function buildDecorations(view) {
       if (isFenceMarker.has(n)) {
         const block = fenceByStart.get(n)  // only set on opening marker
 
-        // Mermaid block (cursor outside): skip — mermaidBlockPlugin replaces it
-        if (block && block.lang === 'mermaid' && !active) {
+        // Mermaid / drawio block (cursor outside): skip — their block
+        // fields replace the entire fence with a widget, so we don't want
+        // the per-line fence styling here.
+        if (block && (block.lang === 'mermaid' || block.lang === 'drawio') && !active) {
           n = block.end  // skip to closing marker (loop will n++ past it)
           continue
         }
@@ -1313,14 +1484,61 @@ const tasksAutoExpandListener = EditorView.updateListener.of(update => {
   })
 })
 
+// ─── Drawio auto-open ────────────────────────────────────────────────────────
+// When the user finishes typing a ```drawio fence (open + close lines both
+// present, body empty), open the embedded editor immediately so they can
+// start drawing instead of having to type XML by hand.
+const drawioAutoOpenListener = EditorView.updateListener.of(update => {
+  if (!update.docChanged) return
+  // Only auto-open on user typing — guard against file load / programmatic
+  // dispatches that would otherwise look like "a new empty block appeared".
+  let userTyped = false
+  for (const tr of update.transactions) {
+    if (tr.isUserEvent('drawio.save')) return
+    if (tr.isUserEvent('input')) userTyped = true
+  }
+  if (!userTyped) return
+  const beforeBlocks = parseFenceBlocks(update.startState).filter(b => b.lang === 'drawio')
+  const afterBlocks  = parseFenceBlocks(update.state).filter(b => b.lang === 'drawio')
+  // Find a drawio block in `after` whose start line wasn't a drawio fence
+  // in `before` — i.e. one that was just created.
+  for (const block of afterBlocks) {
+    const startTextBefore = block.start <= update.startState.doc.lines
+      ? update.startState.doc.line(block.start).text
+      : ''
+    if (/^`{3,}drawio\b/.test(startTextBefore)) {
+      // The opening line existed before — not a new block. Skip unless the
+      // closing line was just added (in which case the body is still empty).
+      const wasComplete = beforeBlocks.some(b => b.start === block.start)
+      if (wasComplete) continue
+    }
+    // Auto-open only when the body is empty (no body lines, or only whitespace)
+    let body = ''
+    for (let i = block.start + 1; i < block.end; i++) {
+      body += update.state.doc.line(i).text + '\n'
+    }
+    if (body.trim() !== '') continue
+    const blockFrom = update.state.doc.line(block.start).from
+    requestAnimationFrame(() => {
+      update.view.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
+        detail: { xml: '', blockFrom },
+        bubbles: true,
+      }))
+    })
+    break
+  }
+})
+
 export const livePreviewPlugin = [
   frontmatterBlockField,
   mermaidBlockField,
+  drawioBlockField,
   embedBlockField,
   activeMermaidField,
   tableBlockField,
   mermaidScrollListener,
   tasksAutoExpandListener,
+  drawioAutoOpenListener,
   ViewPlugin.fromClass(
     class {
       constructor(view) { this.decorations = buildDecorations(view) }

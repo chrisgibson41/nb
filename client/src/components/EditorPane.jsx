@@ -6,9 +6,10 @@ import { acceptCompletion, nextSnippetField, prevSnippetField, completionStatus 
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { livePreviewPlugin, activeMermaidField, findActiveEditBlock } from './livePreviewPlugin.js'
+import { livePreviewPlugin, activeMermaidField, findActiveEditBlock, parseFenceBlocks } from './livePreviewPlugin.js'
 import { mermaidCompletion } from './mermaidCompletion.js'
 import MermaidPreview from './MermaidPreview.jsx'
+import DrawioEditModal from './DrawioEditModal.jsx'
 import './editor.css'
 
 const baseTheme = EditorView.theme({
@@ -166,6 +167,7 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
   const [mermaidFocusLine, setMermaidFocusLine] = useState(null)
   const [previewHeight, setPreviewHeight]     = useState(loadPreviewHeight)
   const [previewCollapsed, setPreviewCollapsed] = useState(loadPreviewCollapsed)
+  const [drawioEdit, setDrawioEdit]           = useState(null) // { xml, blockFrom } | null
   const setMermaidRef     = useRef(setActiveMermaid)
   const focusLineRef      = useRef(setMermaidFocusLine)
   const dragRef           = useRef(null)  // { startX, startWidth } during resize
@@ -183,6 +185,59 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
     el.addEventListener('nb:wiki-link', handler)
     return () => el.removeEventListener('nb:wiki-link', handler)
   }, [])
+
+  // Listen for `nb:drawio-edit` events dispatched by DrawioWidget or the
+  // auto-open listener and pop the embedded editor modal.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e) => {
+      const { xml, blockFrom } = e.detail || {}
+      setDrawioEdit({ xml: xml ?? '', blockFrom: blockFrom ?? null })
+    }
+    el.addEventListener('nb:drawio-edit', handler)
+    return () => el.removeEventListener('nb:drawio-edit', handler)
+  }, [])
+
+  // Save callback for the drawio modal — replace the body of the ```drawio
+  // fence (identified by blockFrom) with the new XML, then close the modal.
+  // The cursor is moved just past the closing fence so the diagram widget
+  // renders immediately (otherwise the user sees raw XML until they click
+  // outside the block).
+  const handleDrawioSave = (newXml) => {
+    const view = viewRef.current
+    if (!view || !drawioEdit) { setDrawioEdit(null); return }
+    const { blockFrom } = drawioEdit
+    const blocks = parseFenceBlocks(view.state)
+    const block  = blocks.find(b =>
+      b.lang === 'drawio' &&
+      view.state.doc.line(b.start).from === blockFrom,
+    )
+    if (!block) { setDrawioEdit(null); return }
+    const openLine  = view.state.doc.line(block.start)
+    const closeLine = view.state.doc.line(block.end)
+    const bodyFrom = openLine.to + 1     // start of the line after ```drawio
+    const bodyTo   = closeLine.from      // start of the closing ```
+    view.dispatch({
+      changes: { from: bodyFrom, to: bodyTo, insert: (newXml || '').trimEnd() + '\n' },
+      userEvent: 'drawio.save',
+    })
+    // Move cursor outside the (now updated) block in a follow-up tick.
+    requestAnimationFrame(() => {
+      const v = viewRef.current
+      if (!v) return
+      const nb = parseFenceBlocks(v.state).find(b =>
+        b.lang === 'drawio' && v.state.doc.line(b.start).from === blockFrom,
+      )
+      if (!nb) return
+      let anchor
+      if (nb.end < v.state.doc.lines) anchor = v.state.doc.line(nb.end + 1).from
+      else if (nb.start > 1)          anchor = v.state.doc.line(nb.start - 1).to
+      else                            anchor = 0
+      v.dispatch({ selection: { anchor } })
+    })
+    setDrawioEdit(null)
+  }
 
   // Expose imperative actions to parent via ref
   useImperativeHandle(ref, () => ({
@@ -329,6 +384,13 @@ const EditorPane = forwardRef(function EditorPane({ content, onChange, filePath,
         </>
       )}
       <div ref={containerRef} className="cm-host" style={{ flex: 1, minHeight: 0 }} />
+      {drawioEdit && (
+        <DrawioEditModal
+          xml={drawioEdit.xml}
+          onSave={handleDrawioSave}
+          onCancel={() => setDrawioEdit(null)}
+        />
+      )}
     </div>
   )
 })
