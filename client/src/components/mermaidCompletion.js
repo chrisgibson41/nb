@@ -1,6 +1,7 @@
 import { autocompletion, snippetCompletion } from '@codemirror/autocomplete'
 import { parseFenceBlocks } from './livePreviewPlugin.js'
 import { wikiLinkCompletionSource } from './wikiLinkCompletion.js'
+import { slashCommandSource } from './slashCommands.js'
 
 // ─── Block helpers ────────────────────────────────────────────────────────────
 
@@ -418,7 +419,7 @@ export function mermaidCompletionSource(context) {
 // ─── Extension export ─────────────────────────────────────────────────────────
 
 export const mermaidCompletion = autocompletion({
-  override: [mermaidCompletionSource, wikiLinkCompletionSource],
+  override: [mermaidCompletionSource, wikiLinkCompletionSource, slashCommandSource],
   activateOnTyping: true,
   activateOnTypingDelay: 50,
   maxRenderedOptions: 30,
