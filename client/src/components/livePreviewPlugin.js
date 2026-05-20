@@ -1485,48 +1485,76 @@ const tasksAutoExpandListener = EditorView.updateListener.of(update => {
 })
 
 // ─── Drawio auto-open ────────────────────────────────────────────────────────
-// When the user finishes typing a ```drawio fence (open + close lines both
-// present, body empty), open the embedded editor immediately so they can
-// start drawing instead of having to type XML by hand.
+// Open the drawio editor whenever the user has signaled they want a drawio
+// diagram. Two trigger paths:
+//
+//   A) A complete `` ```drawio ``` `` fence with an empty body has just been
+//      created (user typed both opening and closing markers).
+//   B) The user typed `` ```drawio `` and pressed Enter — the closing marker
+//      isn't there yet. We auto-insert it, leaving an empty body line, and
+//      open the editor. This is the common case and what users expect.
 const drawioAutoOpenListener = EditorView.updateListener.of(update => {
   if (!update.docChanged) return
   // Only auto-open on user typing — guard against file load / programmatic
   // dispatches that would otherwise look like "a new empty block appeared".
   let userTyped = false
   for (const tr of update.transactions) {
-    if (tr.isUserEvent('drawio.save')) return
-    if (tr.isUserEvent('input')) userTyped = true
+    if (tr.isUserEvent('drawio.save'))         return
+    if (tr.isUserEvent('drawio.autocomplete')) return
+    if (tr.isUserEvent('input'))               userTyped = true
   }
   if (!userTyped) return
+
+  const state = update.state
   const beforeBlocks = parseFenceBlocks(update.startState).filter(b => b.lang === 'drawio')
-  const afterBlocks  = parseFenceBlocks(update.state).filter(b => b.lang === 'drawio')
-  // Find a drawio block in `after` whose start line wasn't a drawio fence
-  // in `before` — i.e. one that was just created.
-  for (const block of afterBlocks) {
-    const startTextBefore = block.start <= update.startState.doc.lines
-      ? update.startState.doc.line(block.start).text
-      : ''
-    if (/^`{3,}drawio\b/.test(startTextBefore)) {
-      // The opening line existed before — not a new block. Skip unless the
-      // closing line was just added (in which case the body is still empty).
-      const wasComplete = beforeBlocks.some(b => b.start === block.start)
-      if (wasComplete) continue
-    }
-    // Auto-open only when the body is empty (no body lines, or only whitespace)
+  const afterBlocks  = parseFenceBlocks(state).filter(b => b.lang === 'drawio')
+
+  // ── Case A: a new complete empty fence appeared ───────────────────────────
+  const newBlock = afterBlocks.find(b =>
+    !beforeBlocks.some(bb => bb.start === b.start && bb.end === b.end),
+  )
+  if (newBlock) {
     let body = ''
-    for (let i = block.start + 1; i < block.end; i++) {
-      body += update.state.doc.line(i).text + '\n'
+    for (let i = newBlock.start + 1; i < newBlock.end; i++) {
+      body += state.doc.line(i).text + '\n'
     }
-    if (body.trim() !== '') continue
-    const blockFrom = update.state.doc.line(block.start).from
+    if (body.trim() === '') {
+      const blockFrom = state.doc.line(newBlock.start).from
+      requestAnimationFrame(() => {
+        update.view.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
+          detail: { xml: '', blockFrom },
+          bubbles: true,
+        }))
+      })
+    }
+    return
+  }
+
+  // ── Case B: cursor is at start of a new empty line right under a
+  //           ```drawio line that has no matching closing fence yet ─────────
+  const head = state.selection.main.head
+  const line = state.doc.lineAt(head)
+  if (head !== line.from || line.text !== '' || line.number < 2) return
+  const prevLine = state.doc.line(line.number - 1)
+  if (!/^`{3,}drawio\s*$/.test(prevLine.text)) return
+  // Skip if that opening already has a closing (i.e. already part of a block)
+  if (afterBlocks.some(b => b.start === prevLine.number)) return
+
+  const blockFrom = prevLine.from
+  requestAnimationFrame(() => {
+    const v = update.view
+    v.dispatch({
+      changes:   { from: head, insert: '\n```' },
+      selection: { anchor: head },   // keep cursor on the empty body line
+      userEvent: 'drawio.autocomplete',
+    })
     requestAnimationFrame(() => {
-      update.view.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
+      v.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
         detail: { xml: '', blockFrom },
         bubbles: true,
       }))
     })
-    break
-  }
+  })
 })
 
 export const livePreviewPlugin = [
