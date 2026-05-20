@@ -4,3 +4,12 @@
 /client/node_modules
 /client/dist
 /config.json
+
+# Playwright e2e artifacts — e2e/test-notes/ is recreated by global-setup.js
+# on every run; test-results/ and e2e/report/ are Playwright outputs.
+/e2e/test-notes/
+/e2e/report/
+/test-results/
+
+# Local UI settings persisted by the running app
+/ui-settings.json
