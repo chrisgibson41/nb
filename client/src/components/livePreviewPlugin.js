@@ -1532,22 +1532,39 @@ const drawioAutoOpenListener = EditorView.updateListener.of(update => {
 
   // ── Case B: cursor is at start of a new empty line right under a
   //           ```drawio line that has no matching closing fence yet ─────────
+  // Also handles the "all on one line" inline variant: `` ```drawio``` ``
+  // (or with spaces) — we reformat it into a proper multi-line fence.
   const head = state.selection.main.head
   const line = state.doc.lineAt(head)
   if (head !== line.from || line.text !== '' || line.number < 2) return
   const prevLine = state.doc.line(line.number - 1)
-  if (!/^`{3,}drawio\s*$/.test(prevLine.text)) return
-  // Skip if that opening already has a closing (i.e. already part of a block)
-  if (afterBlocks.some(b => b.start === prevLine.number)) return
-
-  const blockFrom = prevLine.from
+  const plainOpenRE  = /^`{3,}drawio\s*$/
+  const inlineFullRE = /^(`{3,})drawio\s*`{3,}\s*$/   // ```drawio```
+  let blockFrom = prevLine.from
+  let dispatchSpec = null
+  if (plainOpenRE.test(prevLine.text)) {
+    // Skip if that opening already has a closing somewhere
+    if (afterBlocks.some(b => b.start === prevLine.number)) return
+    dispatchSpec = {
+      changes:   { from: head, insert: '\n```' },
+      selection: { anchor: head },
+      userEvent: 'drawio.autocomplete',
+    }
+  } else if (inlineFullRE.test(prevLine.text)) {
+    // Rewrite the whole line to `` ```drawio `` and the current empty line
+    // to a proper body+closing pair.
+    const canonical = '```drawio\n\n```'
+    dispatchSpec = {
+      changes:   { from: prevLine.from, to: line.to, insert: canonical },
+      selection: { anchor: prevLine.from + '```drawio\n'.length },
+      userEvent: 'drawio.autocomplete',
+    }
+  } else {
+    return
+  }
   requestAnimationFrame(() => {
     const v = update.view
-    v.dispatch({
-      changes:   { from: head, insert: '\n```' },
-      selection: { anchor: head },   // keep cursor on the empty body line
-      userEvent: 'drawio.autocomplete',
-    })
+    v.dispatch(dispatchSpec)
     requestAnimationFrame(() => {
       v.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
         detail: { xml: '', blockFrom },

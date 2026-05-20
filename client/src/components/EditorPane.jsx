@@ -69,6 +69,34 @@ const highlightLineField = StateField.define({
   provide: f => EditorView.decorations.from(f),
 })
 
+// Mod-Shift-D: insert a `` ```drawio ``` `` block at the cursor and open the
+// embedded drawio editor. Reliable fallback in case the markdown-typing
+// auto-trigger gets confused (e.g. inline `` ```drawio``` `` on one line).
+function insertDrawioBlock(view) {
+  const state = view.state
+  const head  = state.selection.main.head
+  const line  = state.doc.lineAt(head)
+  const onEmptyLine = line.text === ''
+  // Where to insert: end of current line (so we never break mid-word).
+  const insertPos = line.to
+  const prefix = onEmptyLine ? '' : '\n'
+  const insert = `${prefix}\`\`\`drawio\n\n\`\`\``
+  const blockFrom = insertPos + prefix.length           // start of the new ```drawio line
+  const cursorPos = blockFrom + '```drawio\n'.length    // start of the empty body line
+  view.dispatch({
+    changes:   { from: insertPos, insert },
+    selection: { anchor: cursorPos },
+    userEvent: 'drawio.autocomplete',
+  })
+  requestAnimationFrame(() => {
+    view.contentDOM.dispatchEvent(new CustomEvent('nb:drawio-edit', {
+      detail: { xml: '', blockFrom },
+      bubbles: true,
+    }))
+  })
+  return true
+}
+
 // Esc:
 //   1. If autocomplete is open, let it close the dropdown (return false).
 //   2. If the cursor is inside a live-preview block (mermaid/code fence,
@@ -105,7 +133,8 @@ function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
         { key: 'Tab',       run: nextSnippetField, shift: prevSnippetField },
       ])),
       Prec.high(keymap.of([
-        { key: 'Escape', run: escapeBlockOrBlur },
+        { key: 'Escape',      run: escapeBlockOrBlur },
+        { key: 'Mod-Shift-d', run: insertDrawioBlock },
       ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       highlightLineField,
