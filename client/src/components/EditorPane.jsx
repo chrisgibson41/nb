@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
+import { EditorState, EditorSelection, Prec, StateEffect, StateField } from '@codemirror/state'
 import { EditorView, keymap, highlightActiveLine, Decoration } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { acceptCompletion, nextSnippetField, prevSnippetField, completionStatus } from '@codemirror/autocomplete'
@@ -97,6 +97,86 @@ function insertDrawioBlock(view) {
   return true
 }
 
+// ── Markdown inline-format toggles ──────────────────────────────────────────
+// Wraps the selection in markdown delimiters, or — if the selection (or the
+// cursor-touched word) is already wrapped — unwraps it. With no selection
+// and no surrounding word, inserts the delimiters with the cursor between.
+function toggleMarkdownWrap(view, open, close = open) {
+  const state = view.state
+  const changes = state.changeByRange(range => {
+    let { from, to } = range
+    // If no selection, expand to the word around the cursor (so Mod-B on a
+    // word turns it bold without selecting first).
+    if (from === to) {
+      const line = state.doc.lineAt(from)
+      const text = line.text
+      const idx  = from - line.from
+      let wordStart = idx
+      while (wordStart > 0 && /\w/.test(text[wordStart - 1])) wordStart--
+      let wordEnd = idx
+      while (wordEnd < text.length && /\w/.test(text[wordEnd])) wordEnd++
+      if (wordStart < wordEnd) { from = line.from + wordStart; to = line.from + wordEnd }
+    }
+    // Already wrapped? Check the characters immediately outside the range.
+    const before = state.sliceDoc(Math.max(0, from - open.length), from)
+    const after  = state.sliceDoc(to, Math.min(state.doc.length, to + close.length))
+    if (before === open && after === close) {
+      return {
+        changes: [
+          { from: from - open.length, to: from, insert: '' },
+          { from: to,                  to: to + close.length, insert: '' },
+        ],
+        range: EditorSelection.range(from - open.length, to - open.length),
+      }
+    }
+    // Wrap
+    return {
+      changes: [
+        { from, insert: open },
+        { from: to, insert: close },
+      ],
+      range: EditorSelection.range(from + open.length, to + open.length),
+    }
+  })
+  view.dispatch(state.update(changes, { userEvent: 'input.format' }))
+  return true
+}
+
+const toggleBold          = (view) => toggleMarkdownWrap(view, '**')
+const toggleItalic        = (view) => toggleMarkdownWrap(view, '_')
+const toggleStrikethrough = (view) => toggleMarkdownWrap(view, '~~')
+const toggleInlineCode    = (view) => toggleMarkdownWrap(view, '`')
+
+// Mod-K — wrap selection (or cursor word) as a markdown link `[text](url)`
+// with the cursor positioned inside the url for typing.
+function insertLink(view) {
+  const state = view.state
+  const changes = state.changeByRange(range => {
+    let { from, to } = range
+    if (from === to) {
+      const line = state.doc.lineAt(from)
+      const text = line.text
+      const idx  = from - line.from
+      let wordStart = idx
+      while (wordStart > 0 && /\w/.test(text[wordStart - 1])) wordStart--
+      let wordEnd = idx
+      while (wordEnd < text.length && /\w/.test(text[wordEnd])) wordEnd++
+      if (wordStart < wordEnd) { from = line.from + wordStart; to = line.from + wordEnd }
+    }
+    const selected = state.sliceDoc(from, to) || 'text'
+    const inserted = `[${selected}](url)`
+    // Cursor lands on the url placeholder so the user can paste/type it.
+    const urlFrom = from + selected.length + 3   // `[selected](`
+    const urlTo   = urlFrom + 'url'.length
+    return {
+      changes: [{ from, to, insert: inserted }],
+      range: EditorSelection.range(urlFrom, urlTo),
+    }
+  })
+  view.dispatch(state.update(changes, { userEvent: 'input.format' }))
+  return true
+}
+
 // Esc:
 //   1. If autocomplete is open, let it close the dropdown (return false).
 //   2. If the cursor is inside a live-preview block (mermaid/code fence,
@@ -135,6 +215,12 @@ function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
       Prec.high(keymap.of([
         { key: 'Escape',      run: escapeBlockOrBlur },
         { key: 'Mod-Shift-d', run: insertDrawioBlock },
+        // Markdown inline formatting shortcuts
+        { key: 'Mod-b',       run: toggleBold },
+        { key: 'Mod-i',       run: toggleItalic },
+        { key: 'Mod-Shift-x', run: toggleStrikethrough },
+        { key: 'Mod-e',       run: toggleInlineCode },   // 'e' for 'eval' / code
+        { key: 'Mod-k',       run: insertLink },
       ])),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       highlightLineField,
