@@ -6,7 +6,14 @@ import { acceptCompletion, nextSnippetField, prevSnippetField, completionStatus 
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { livePreviewPlugin, activeMermaidField, findActiveEditBlock, parseFenceBlocks } from './livePreviewPlugin.js'
+import {
+  livePreviewPlugin,
+  activeMermaidField,
+  findActiveEditBlock,
+  parseFenceBlocks,
+  tableTabMove,
+  tableEnterExit,
+} from './livePreviewPlugin.js'
 import { mermaidCompletion } from './mermaidCompletion.js'
 import MermaidPreview from './MermaidPreview.jsx'
 import DrawioEditModal from './DrawioEditModal.jsx'
@@ -203,17 +210,20 @@ function createEditorState(doc, onChange, onMermaidChange, onFocusLine) {
     doc,
     extensions: [
       history(),
-      // High-priority Tab bindings that run before indentWithTab:
-      //   1. Accept the active completion dropdown (if open)
-      //   2. Move to the next snippet placeholder (if a snippet is active)
-      // Both commands return false when they don't apply, so Tab falls
-      // through to indentWithTab for normal indentation.
+      // High-priority key bindings (tried before defaults). Each handler returns
+      // false when it doesn't apply, so subsequent bindings get a turn.
       Prec.high(keymap.of([
-        { key: 'Tab',       run: acceptCompletion },
-        { key: 'Tab',       run: nextSnippetField, shift: prevSnippetField },
-      ])),
-      Prec.high(keymap.of([
-        { key: 'Escape',      run: escapeBlockOrBlur },
+        // 1. Accept active autocomplete dropdown on Tab
+        { key: 'Tab', run: acceptCompletion },
+        // 2. Tab/Shift-Tab navigates cells inside a markdown table
+        { key: 'Tab', run: view => tableTabMove(view, false), shift: view => tableTabMove(view, true) },
+        // 3. Enter on a table row exits the table to the line below
+        { key: 'Enter', run: tableEnterExit },
+        // 4. Tab/Shift-Tab through active snippet placeholders
+        { key: 'Tab', run: nextSnippetField, shift: prevSnippetField },
+        // 5. Esc: exit live-preview block / blur editor (see escapeBlockOrBlur)
+        { key: 'Escape', run: escapeBlockOrBlur },
+        // 6. Insert a ```drawio block and open the embedded editor
         { key: 'Mod-Shift-d', run: insertDrawioBlock },
         // Markdown inline formatting shortcuts
         { key: 'Mod-b',       run: toggleBold },
