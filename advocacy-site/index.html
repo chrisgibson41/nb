@@ -125,14 +125,36 @@
     position: relative;
     background: var(--hero-ground);
     color: var(--hero-ink);
-    padding: clamp(4.5rem, 12vh, 9rem) 0 clamp(3rem, 8vh, 6rem);
+    min-height: min(94vh, 880px);
+    display: flex;
+    align-items: flex-end;
+    padding: clamp(4.5rem, 12vh, 9rem) 0 clamp(2.6rem, 7vh, 5rem);
     overflow: hidden;
   }
-  .hero::before, .hero::after {
-    content: ""; position: absolute; border-radius: 50%; filter: blur(70px); opacity: .5; pointer-events: none;
+  /* full-bleed hero photo layer */
+  .hero-photo {
+    position: absolute; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(135deg, rgba(52,32,44,.55), rgba(20,10,16,.55)),
+      radial-gradient(120% 90% at 72% 18%, rgba(244,185,66,.24), transparent 55%);
+    background-size: cover; background-position: center 30%; background-repeat: no-repeat;
   }
-  .hero::before { width: 46vw; height: 46vw; top: -14vw; right: -10vw; background: radial-gradient(circle, rgba(244,185,66,.5), transparent 65%); }
-  .hero::after { width: 40vw; height: 40vw; bottom: -18vw; left: -12vw; background: radial-gradient(circle, rgba(232,116,143,.42), transparent 65%); }
+  /* to drop in the real photo: add class "has-photo" and set --hero-img on this element */
+  .hero-photo.has-photo { background-image: var(--hero-img); }
+  .hero-photo .photo-badge {
+    position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%);
+    text-align: center; color: var(--hero-muted); max-width: 32ch; padding: 0 1rem;
+  }
+  .hero-photo.has-photo .photo-badge { display: none; }
+  .hero-photo .photo-badge .ico { font-size: 2.6rem; display: block; margin-bottom: .5rem; }
+  .hero-photo .photo-badge .cap { font-family: "Fraunces", serif; font-style: italic; font-size: 1.15rem; color: var(--hero-ink); }
+  .hero-photo .photo-badge .hint { font-size: .84rem; margin-top: .55rem; opacity: .85; }
+  .hero-scrim {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background:
+      linear-gradient(to top, rgba(12,6,10,.94) 2%, rgba(12,6,10,.6) 30%, rgba(12,6,10,.12) 58%, rgba(12,6,10,.32) 100%),
+      linear-gradient(to right, rgba(12,6,10,.5), transparent 58%);
+  }
   .hero .wrap { position: relative; z-index: 2; }
 
   .hero-eyebrow { color: var(--accent); display: inline-flex; align-items: center; gap: .7rem; margin-bottom: 1.4rem; }
@@ -140,10 +162,11 @@
 
   .hero h1 {
     font-weight: 600;
-    font-size: clamp(3rem, 9.5vw, 7.2rem);
-    line-height: .96;
+    font-size: clamp(2.6rem, 7.4vw, 5.6rem);
+    line-height: .98;
     letter-spacing: -.03em;
-    margin: 0 0 1.4rem;
+    margin: 0 0 1.3rem;
+    text-shadow: 0 2px 30px rgba(0,0,0,.35);
   }
   .hero h1 .name { display: block; }
   .hero h1 em {
@@ -334,18 +357,24 @@
 
   <!-- HERO -->
   <section class="hero">
+    <!-- PHOTO: add class "has-photo" and style="--hero-img:url('parliament.jpg')" to go live -->
+    <div class="hero-photo" id="heroPhoto" role="img" aria-label="Speaking before the Scottish Parliament committee">
+      <div class="photo-badge">
+        <span class="ico">🏛️</span>
+        <span class="cap">Your Scottish Parliament photo — full-bleed here</span>
+        <span class="hint">Send me the image and it becomes the first thing every visitor sees</span>
+      </div>
+    </div>
+    <div class="hero-scrim"></div>
     <div class="wrap">
       <span class="hero-eyebrow eyebrow reveal-up d1"><span class="dot"></span> Endometriosis Patient Advocate · Glasgow</span>
       <h1 class="reveal-up d2">
-        <span class="name">Turning pain</span>
-        <span class="name">into <em>power</em>,</span>
-        <span class="name">and silence</span>
-        <span class="name">into <em>change</em>.</span>
+        <span class="name">Turning pain into <em>power</em>.</span>
+        <span class="name">Turning silence into <em>change</em>.</span>
       </h1>
       <p class="hero-lead reveal-up d3">
-        For years I've led, spoken, and campaigned so that no one faces endometriosis unheard — from a
-        <strong>Glasgow support group</strong> to <strong>BBC Newsnight</strong> and the floor of the
-        <strong>Scottish Parliament</strong>.
+        From a <strong>Glasgow support group</strong> to <strong>BBC Newsnight</strong> and the floor of the
+        <strong>Scottish Parliament</strong> — so that no one faces endometriosis unheard.
       </p>
       <div class="hero-actions reveal-up d4">
         <a class="btn btn-primary" href="#contact">Invite me to speak →</a>
@@ -391,9 +420,9 @@
       <figure style="margin:0;">
         <div class="photo-slot">
           <div class="ph-inner">
-            <span class="ico">🏛️</span>
-            <span class="cap">Your parliament photo goes here</span>
-            <span class="hint">Send me the image and I'll drop it straight in</span>
+            <span class="ico">📷</span>
+            <span class="cap">A second photo goes here</span>
+            <span class="hint">Another shot from the day, a portrait, or the support group</span>
           </div>
         </div>
         <figcaption>Giving evidence to the Scottish Parliament committee.</figcaption>
